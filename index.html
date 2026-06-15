@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#0b1d3a" />
+<title>Scriptures Completed</title>
+
+<style>
+  /* ============================================================
+     COLORS / THEME
+     ============================================================ */
+  :root{
+    --bg:#0b1d3a;
+    --bg2:#102a52;
+    --card:rgba(255,255,255,0.06);
+    --border:rgba(255,255,255,0.14);
+    --text:#f5f8ff;
+    --muted:#9db2d8;
+    --accent:#ffd24d;
+    --accent2:#4dd0a7;
+    --danger:#ff6b6b;
+    --ok:#4dd0a7;
+  }
+
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:linear-gradient(160deg,var(--bg),var(--bg2));
+    color:var(--text);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .wrap{max-width:560px; margin:0 auto; padding:18px 16px 48px;}
+
+  header.app{
+    text-align:center;
+    padding:18px 8px 8px;
+  }
+  header.app h1{
+    margin:0;
+    font-size:1.15rem;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--muted);
+    font-weight:700;
+  }
+  .sync{
+    margin-top:6px;
+    font-size:.78rem;
+    color:var(--muted);
+    display:inline-flex; align-items:center; gap:7px;
+  }
+  .dot{width:9px;height:9px;border-radius:50%;background:#777;display:inline-block;transition:background .3s;}
+  .dot.live{background:var(--ok); box-shadow:0 0 10px var(--ok);}
+  .dot.off{background:var(--danger);}
+
+  /* ============================================================
+     HERO COUNT
+     ============================================================ */
+  .hero{
+    margin:22px 0 14px;
+    text-align:center;
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:24px;
+    padding:30px 16px 26px;
+    box-shadow:0 12px 40px rgba(0,0,0,.30);
+  }
+  .hero .label{
+    font-size:.82rem; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--muted); font-weight:700;
+  }
+  .hero .total{
+    font-size:clamp(3.6rem, 22vw, 6.5rem);
+    line-height:1;
+    font-weight:900;
+    color:var(--accent);
+    margin:8px 0 4px;
+    font-variant-numeric:tabular-nums;
+    text-shadow:0 4px 22px rgba(255,210,77,.25);
+    transition:transform .18s ease;
+  }
+  .hero .total.bump{transform:scale(1.06);}
+  .hero .sub{font-size:.95rem; color:var(--muted);}
+
+  /* ============================================================
+     STAT CARDS
+     ============================================================ */
+  .stats{
+    display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:14px;
+  }
+  .stat{
+    background:var(--card); border:1px solid var(--border);
+    border-radius:18px; padding:18px 14px; text-align:center;
+  }
+  .stat .num{font-size:2rem; font-weight:800; font-variant-numeric:tabular-nums;}
+  .stat .num.green{color:var(--accent2);}
+  .stat .cap{font-size:.74rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:5px;}
+
+  /* ============================================================
+     BUTTONS / ADMIN
+     ============================================================ */
+  .adminbar{margin-top:26px; text-align:center;}
+  button{
+    font-family:inherit; cursor:pointer; border:none; border-radius:14px;
+    font-weight:700; transition:transform .08s ease, opacity .2s, background .2s;
+  }
+  button:active{transform:scale(.97);}
+  button:disabled{opacity:.5; cursor:not-allowed;}
+
+  .btn-ghost{
+    background:transparent; color:var(--muted); border:1px solid var(--border);
+    padding:12px 20px; font-size:.9rem; letter-spacing:.05em;
+  }
+
+  .admin{
+    margin-top:18px;
+    background:var(--card); border:1px solid var(--border);
+    border-radius:20px; padding:18px 16px 22px;
+  }
+  .admin h2{
+    margin:0 0 14px; font-size:.9rem; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--muted); text-align:center;
+  }
+
+  .btn-plus{
+    width:100%; background:var(--accent2); color:#06251c;
+    font-size:1.7rem; padding:26px 10px; border-radius:18px; letter-spacing:.02em;
+    box-shadow:0 8px 24px rgba(77,208,167,.35);
+  }
+
+  .row{display:flex; gap:10px; margin-top:14px; align-items:stretch;}
+  .row input{
+    flex:1; min-width:0; background:rgba(0,0,0,.25); color:var(--text);
+    border:1px solid var(--border); border-radius:12px; padding:14px;
+    font-size:1.1rem; font-family:inherit; text-align:center;
+  }
+  .row input:focus{outline:none; border-color:var(--accent);}
+  .btn-sm{padding:0 18px; font-size:1rem; background:#27406e; color:var(--text); border:1px solid var(--border);}
+  .btn-sm.danger{background:transparent; color:var(--danger); border:1px solid rgba(255,107,107,.5);}
+  .btn-sm.go{background:var(--accent); color:#3a2c00;}
+
+  .field{margin-top:16px;}
+  .field label{display:block; font-size:.78rem; color:var(--muted); margin-bottom:6px; letter-spacing:.05em;}
+
+  .note{font-size:.74rem; color:var(--muted); text-align:center; margin-top:16px; line-height:1.5;}
+
+  /* login box */
+  .login{margin-top:18px; text-align:center;}
+  .login input{
+    width:100%; background:rgba(0,0,0,.25); color:var(--text);
+    border:1px solid var(--border); border-radius:12px; padding:14px;
+    font-size:1.1rem; font-family:inherit; text-align:center; letter-spacing:.2em;
+  }
+  .login input:focus{outline:none; border-color:var(--accent);}
+  .login .btn-go{margin-top:12px; width:100%; background:var(--accent); color:#3a2c00; padding:16px; font-size:1.05rem;}
+  .err{color:var(--danger); font-size:.85rem; margin-top:10px; min-height:1em;}
+
+  .hidden{display:none !important;}
+
+  footer{margin-top:30px; text-align:center; font-size:.72rem; color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ======================================================== -->
+  <!-- HEADER                                                    -->
+  <!-- ======================================================== -->
+  <header class="app">
+    <h1 id="appTitle">Scriptures Completed</h1>
+    <div class="sync"><span class="dot" id="syncDot"></span><span id="syncText">Connecting…</span></div>
+  </header>
+
+  <!-- ======================================================== -->
+  <!-- PUBLIC DASHBOARD                                          -->
+  <!-- ======================================================== -->
+  <section class="hero">
+    <div class="label">Total Scriptures Completed</div>
+    <div class="total" id="totalCount">—</div>
+    <div class="sub" id="heroSub">&nbsp;</div>
+  </section>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="num" id="boxCount">—</div>
+      <div class="cap">Boxes Completed</div>
+    </div>
+    <div class="stat">
+      <div class="num green" id="perHour">—</div>
+      <div class="cap">Average / Hour</div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- ADMIN TOGGLE                                              -->
+  <!-- ======================================================== -->
+  <div class="adminbar">
+    <button class="btn-ghost" id="adminToggle">🔒 Admin</button>
+  </div>
+
+  <!-- LOGIN (hidden until toggled) -->
+  <section class="admin login hidden" id="loginPanel">
+    <h2>Admin Login</h2>
+    <input type="password" id="pwInput" inputmode="numeric" placeholder="Password" autocomplete="off" />
+    <button class="btn-go" id="pwSubmit">Unlock</button>
+    <div class="err" id="pwErr"></div>
+  </section>
+
+  <!-- ADMIN CONTROLS (hidden until unlocked) -->
+  <section class="admin hidden" id="adminPanel">
+    <h2>Admin Controls</h2>
+
+    <button class="btn-plus" id="plusBox">+1 Box</button>
+
+    <div class="field">
+      <label>Add a specific number of boxes</label>
+      <div class="row">
+        <input type="number" id="addBoxesInput" inputmode="numeric" placeholder="e.g. 5" />
+        <button class="btn-sm go" id="addBoxesBtn">Add</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Set total completed boxes (overwrite)</label>
+      <div class="row">
+        <input type="number" id="setBoxesInput" inputmode="numeric" placeholder="exact box count" />
+        <button class="btn-sm" id="setBoxesBtn">Set</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Correct a mistake</label>
+      <div class="row">
+        <button class="btn-sm danger" id="minusBox" style="flex:1;">− Remove 1 Box</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Booklets per box</label>
+      <div class="row">
+        <input type="number" id="perBoxInput" inputmode="numeric" placeholder="booklets per box" />
+        <button class="btn-sm go" id="perBoxBtn">Save</button>
+      </div>
+    </div>
+
+    <div class="note" id="adminNote"></div>
+    <div class="adminbar" style="margin-top:6px;">
+      <button class="btn-ghost" id="logoutBtn">Lock & Sign Out</button>
+    </div>
+  </section>
+
+  <footer id="missionFooter"></footer>
+</div>
+
+<!-- ============================================================ -->
+<!-- Firebase SDK (compat build — no bundler / build step needed) -->
+<!-- ============================================================ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<script>
+/* ================================================================
+   ███  CONFIGURE EVERYTHING HERE  ███
+   This is the ONE spot to edit. Read README.md for step-by-step setup.
+   ================================================================ */
+
+// ---- 1) FIREBASE CONFIG --------------------------------------
+//   Paste the config object Firebase gives you (Project settings →
+//   "Your apps" → web app). Make sure databaseURL is included — if it
+//   is missing, copy it from Realtime Database (it ends in
+//   firebaseio.com or firebasedatabase.app).
+const FIREBASE_CONFIG = {
+  apiKey:            "PASTE_API_KEY",
+  authDomain:        "PASTE_PROJECT.firebaseapp.com",
+  databaseURL:       "https://PASTE_PROJECT-default-rtdb.firebaseio.com",
+  projectId:         "PASTE_PROJECT",
+  storageBucket:     "PASTE_PROJECT.appspot.com",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
+};
+
+// ---- 2) ADMIN PASSWORD ---------------------------------------
+//   Unlocks the admin controls on this device. (See the security note
+//   in README.md — this hides the controls; it is not bank-grade.)
+const ADMIN_PASSWORD = "5898";
+
+// ---- 3) DEFAULTS ---------------------------------------------
+const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
+const APP_TITLE = "Scriptures Completed";
+
+// ---- 4) MISSION START (the "clock") --------------------------
+//   The work-hours clock counts from this exact moment, in Eastern
+//   Time (Michigan). Set it to the MONDAY your mission week begins.
+//   Format: YEAR, MONTH(1-12), DAY, HOUR(24h), MINUTE
+const MISSION_START = { year: 2026, month: 6, day: 15, hour: 9, minute: 0 };
+
+// ---- 5) WORK WINDOW (rarely needs changing) ------------------
+const WORK_START_HOUR = 9;    // 9 AM
+const WORK_END_HOUR   = 20;   // 8 PM
+//   Working days: Monday(1) … Friday(5)
+const WORK_DAYS = [1, 2, 3, 4, 5];
+const TIME_ZONE = "America/New_York";
+
+/* ================================================================
+   ███  END CONFIG — you shouldn't need to edit below  ███
+   ================================================================ */
+
+document.getElementById("appTitle").textContent = APP_TITLE;
+document.title = APP_TITLE;
+
+// ---------- Firebase init ----------
+let db = null, stateRef = null;
+let connected = false;
+try {
+  firebase.initializeApp(FIREBASE_CONFIG);
+  db = firebase.database();
+  stateRef = db.ref("tracker");
+} catch (e) {
+  console.error("Firebase init failed:", e);
+}
+
+// Local mirror of the shared state
+let state = { completedBoxes: 0, bookletsPerBox: DEFAULT_BOOKLETS_PER_BOX };
+
+// ---------- DOM ----------
+const $ = (id) => document.getElementById(id);
+const totalEl   = $("totalCount");
+const boxEl     = $("boxCount");
+const perHourEl = $("perHour");
+const heroSub   = $("heroSub");
+const syncDot   = $("syncDot");
+const syncText  = $("syncText");
+
+// ---------- Sync status ----------
+if (db) {
+  db.ref(".info/connected").on("value", (snap) => {
+    connected = snap.val() === true;
+    syncDot.className = "dot " + (connected ? "live" : "off");
+    syncText.textContent = connected ? "Live — synced to all devices" : "Reconnecting…";
+  });
+} else {
+  syncDot.className = "dot off";
+  syncText.textContent = "Firebase not configured — see README.md";
+}
+
+// ---------- Live data listener (public read) ----------
+if (stateRef) {
+  stateRef.on("value", (snap) => {
+    const v = snap.val() || {};
+    state.completedBoxes = Number(v.completedBoxes) || 0;
+    state.bookletsPerBox = Number(v.bookletsPerBox) || DEFAULT_BOOKLETS_PER_BOX;
+    render();
+    // keep admin's "per box" field showing the current value when idle
+    const pbInput = $("perBoxInput");
+    if (document.activeElement !== pbInput) pbInput.value = state.bookletsPerBox;
+  }, (err) => {
+    console.error("Read failed:", err);
+    syncText.textContent = "Read error — check database rules";
+    syncDot.className = "dot off";
+  });
+}
+
+// ---------- Number formatting ----------
+const fmt = (n) => Number(n).toLocaleString("en-US");
+
+// ---------- Render dashboard ----------
+let lastTotal = null;
+function render() {
+  const total = state.completedBoxes * state.bookletsPerBox;
+  totalEl.textContent = fmt(total);
+  boxEl.textContent   = fmt(state.completedBoxes);
+  heroSub.textContent = `${fmt(state.completedBoxes)} boxes × ${fmt(state.bookletsPerBox)} booklets`;
+
+  // little "bump" animation when the total changes
+  if (lastTotal !== null && total !== lastTotal) {
+    totalEl.classList.add("bump");
+    setTimeout(() => totalEl.classList.remove("bump"), 180);
+  }
+  lastTotal = total;
+
+  renderAvg(total);
+}
+
+// ================================================================
+// AVERAGE-PER-HOUR  (Eastern Time, weekday 9 AM–8 PM only)
+// ================================================================
+
+// Returns the current wall-clock time in TIME_ZONE as a plain Date
+// whose local fields equal the Eastern-Time fields.
+function nowInET() {
+  return new Date(new Date().toLocaleString("en-US", { timeZone: TIME_ZONE }));
+}
+
+// Build a Date (ET wall clock) from config numbers.
+function etDate(y, m, d, h, min) {
+  return new Date(y, m - 1, d, h, min, 0, 0);
+}
+
+// Sum the number of WORKING hours between two ET datetimes,
+// counting only weekday WORK_START_HOUR..WORK_END_HOUR windows.
+function workingHoursBetween(start, end) {
+  if (end <= start) return 0;
+  let total = 0;
+
+  // Walk day by day from the start date through the end date.
+  const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+
+  while (cur <= lastDay) {
+    const dow = cur.getDay(); // 0=Sun … 6=Sat
+    if (WORK_DAYS.includes(dow)) {
+      const winStart = new Date(cur); winStart.setHours(WORK_START_HOUR, 0, 0, 0);
+      const winEnd   = new Date(cur); winEnd.setHours(WORK_END_HOUR, 0, 0, 0);
+      // overlap of [start,end] with this day's [winStart,winEnd]
+      const a = Math.max(start.getTime(), winStart.getTime());
+      const b = Math.min(end.getTime(),   winEnd.getTime());
+      if (b > a) total += (b - a) / 3600000; // ms → hours
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return total;
+}
+
+function renderAvg(total) {
+  const start = etDate(MISSION_START.year, MISSION_START.month, MISSION_START.day,
+                       MISSION_START.hour, MISSION_START.minute);
+  const now = nowInET();
+  const hours = workingHoursBetween(start, now);
+
+  if (hours <= 0) {
+    perHourEl.textContent = total > 0 ? "—" : "0";
+    return;
+  }
+  const avg = total / hours;
+  perHourEl.textContent = avg.toLocaleString("en-US", { maximumFractionDigits: 1 });
+}
+
+// Recompute the average once a minute so it keeps moving even when
+// the count is unchanged.
+setInterval(() => render(), 60 * 1000);
+
+// Footer: show the configured mission start.
+$("missionFooter").textContent =
+  `Clock starts ${MISSION_START.month}/${MISSION_START.day}/${MISSION_START.year} ` +
+  `${WORK_START_HOUR}:00 ET · counts weekday ${WORK_START_HOUR}:00–${WORK_END_HOUR}:00 ET only`;
+
+// ================================================================
+// ADMIN
+// ================================================================
+const adminToggle = $("adminToggle");
+const loginPanel  = $("loginPanel");
+const adminPanel  = $("adminPanel");
+const adminNote   = $("adminNote");
+let isAdmin = false;
+
+adminToggle.addEventListener("click", () => {
+  if (isAdmin) {
+    adminPanel.classList.toggle("hidden");
+    return;
+  }
+  loginPanel.classList.toggle("hidden");
+  if (!loginPanel.classList.contains("hidden")) $("pwInput").focus();
+});
+
+function tryUnlock() {
+  const val = $("pwInput").value;
+  if (val === ADMIN_PASSWORD) {
+    isAdmin = true;
+    loginPanel.classList.add("hidden");
+    adminPanel.classList.remove("hidden");
+    adminToggle.textContent = "🔓 Admin (unlocked)";
+    $("pwErr").textContent = "";
+    $("pwInput").value = "";
+    $("perBoxInput").value = state.bookletsPerBox;
+  } else {
+    $("pwErr").textContent = "Wrong password.";
+  }
+}
+$("pwSubmit").addEventListener("click", tryUnlock);
+$("pwInput").addEventListener("keydown", (e) => { if (e.key === "Enter") tryUnlock(); });
+
+$("logoutBtn").addEventListener("click", () => {
+  isAdmin = false;
+  adminPanel.classList.add("hidden");
+  adminToggle.textContent = "🔒 Admin";
+});
+
+// ---- Write helpers (guarded) ----
+function requireReady() {
+  if (!isAdmin) { flash("Unlock admin first."); return false; }
+  if (!stateRef || !connected) { flash("Not connected to the database."); return false; }
+  return true;
+}
+function flash(msg, ok) {
+  adminNote.textContent = msg;
+  adminNote.style.color = ok ? "var(--ok)" : "var(--danger)";
+  if (ok) setTimeout(() => { adminNote.textContent = ""; }, 2500);
+}
+
+function writeBoxes(newCount) {
+  newCount = Math.max(0, Math.floor(newCount));
+  stateRef.update({ completedBoxes: newCount, bookletsPerBox: state.bookletsPerBox })
+    .then(() => flash("Saved ✓ — everyone's screen just updated.", true))
+    .catch((e) => flash("Save failed: " + e.message));
+}
+
+// +1 box
+$("plusBox").addEventListener("click", () => {
+  if (!requireReady()) return;
+  writeBoxes(state.completedBoxes + 1);
+});
+
+// remove 1 box
+$("minusBox").addEventListener("click", () => {
+  if (!requireReady()) return;
+  writeBoxes(state.completedBoxes - 1);
+});
+
+// add N boxes
+$("addBoxesBtn").addEventListener("click", () => {
+  if (!requireReady()) return;
+  const n = parseInt($("addBoxesInput").value, 10);
+  if (isNaN(n)) { flash("Enter a number to add."); return; }
+  writeBoxes(state.completedBoxes + n);
+  $("addBoxesInput").value = "";
+});
+
+// set exact box count
+$("setBoxesBtn").addEventListener("click", () => {
+  if (!requireReady()) return;
+  const n = parseInt($("setBoxesInput").value, 10);
+  if (isNaN(n)) { flash("Enter the exact box count."); return; }
+  writeBoxes(n);
+  $("setBoxesInput").value = "";
+});
+
+// set booklets-per-box
+$("perBoxBtn").addEventListener("click", () => {
+  if (!requireReady()) return;
+  const n = parseInt($("perBoxInput").value, 10);
+  if (isNaN(n) || n < 1) { flash("Booklets per box must be 1 or more."); return; }
+  stateRef.update({ bookletsPerBox: n, completedBoxes: state.completedBoxes })
+    .then(() => flash("Booklets-per-box saved ✓", true))
+    .catch((e) => flash("Save failed: " + e.message));
+});
+</script>
+</body>
+</html>
