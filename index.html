@@ -86,6 +86,17 @@
   }
   .hero .total.bump{transform:scale(1.06);}
   .hero .sub{font-size:.95rem; color:var(--muted);}
+  .goalbar{
+    margin:18px auto 4px; max-width:340px; height:10px; border-radius:6px;
+    background:rgba(255,255,255,0.08); overflow:hidden;
+  }
+  .goalbar-fill{
+    height:100%; width:0%; border-radius:6px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    transition:width .5s ease;
+  }
+  .goalpct{font-size:.8rem; color:var(--muted); margin-top:8px;}
+  .goalpct b{color:var(--accent);}
 
   /* ============================================================
      STAT CARDS
@@ -124,6 +135,7 @@
   .daily-row .day{font-weight:700; font-size:1rem; display:flex; align-items:center; gap:8px;}
   .daily-row .day .goal{font-size:.68rem; color:var(--accent); letter-spacing:.05em;}
   .daily-row .day .live{font-size:.62rem; color:var(--ok); letter-spacing:.08em; text-transform:uppercase;}
+  .daily-row .day .met{font-size:.85rem; color:var(--ok); font-weight:800;}
   .daily-row .val{font-weight:800; font-size:1.15rem; color:var(--accent); font-variant-numeric:tabular-nums;}
   .daily-row .val small{font-size:.68rem; color:var(--muted); font-weight:600; display:block; text-align:right;}
   .daily-foot{font-size:.72rem; color:var(--muted); text-align:center; margin-top:10px; line-height:1.5;}
@@ -210,6 +222,8 @@
     <div class="label">Total Scriptures Completed</div>
     <div class="total" id="totalCount">—</div>
     <div class="sub" id="heroSub">&nbsp;</div>
+    <div class="goalbar"><div class="goalbar-fill" id="goalFill"></div></div>
+    <div class="goalpct" id="goalPct">&nbsp;</div>
   </section>
 
   <div class="stats">
@@ -328,6 +342,14 @@ const ADMIN_PASSWORD = "5898";
 const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
 const APP_TITLE = "Scriptures Completed";
 
+// ---- 3b) WEEK GOAL -------------------------------------------
+//   Total Scriptures goal for the week, split evenly across the
+//   working days up to (and including) the GOAL day below.
+const TOTAL_GOAL = 300000;        // grand total goal for the week
+//   Day the goal should be hit (0=Sun … 4=Thu … 5=Fri). Days after
+//   this one are shown as "buffer" with no daily goal.
+const GOAL_DAY_DOW = 4;           // Thursday night
+
 // ---- 4) MISSION START (the "clock") --------------------------
 //   The work-hours clock counts from this exact moment, in Eastern
 //   Time (Michigan). Set it to the MONDAY your mission week begins.
@@ -424,6 +446,12 @@ function render() {
   }
   lastTotal = total;
 
+  // overall progress toward the week goal
+  const pct = TOTAL_GOAL > 0 ? Math.min(100, (total / TOTAL_GOAL) * 100) : 0;
+  $("goalFill").style.width = pct.toFixed(1) + "%";
+  $("goalPct").innerHTML =
+    `<b>${pct.toFixed(1)}%</b> of ${fmt(TOTAL_GOAL)} goal · ${fmt(Math.max(0, TOTAL_GOAL - total))} to go`;
+
   renderAvg(total);
   renderDaily();
 }
@@ -506,7 +534,7 @@ function missionWeekDates() {
     out.push({
       key: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
       label: `${names[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`,
-      isGoal: d.getDay() === 4 // Thursday = goal night
+      isGoal: d.getDay() === GOAL_DAY_DOW
     });
   }
   return out;
@@ -516,32 +544,52 @@ function renderDaily() {
   const dates = missionWeekDates();
   const days = state.days || {};
   const todayKey = todayKeyET();
+
+  // Per-day goal: split TOTAL_GOAL across the days up to the goal day.
+  const goalIdx = dates.findIndex((d) => d.isGoal);
+  const goalDays = goalIdx >= 0 ? goalIdx + 1 : dates.length;
+  const perDayGoal = Math.round(TOTAL_GOAL / goalDays);
+
   const html = [];
   let prevCum = 0; // cumulative boxes at the start of each day
 
-  dates.forEach((d) => {
-    // Cumulative box count recorded on this day; if none, carry the prior value.
-    const cum = (days[d.key] != null) ? Number(days[d.key]) : prevCum;
+  dates.forEach((d, i) => {
+    const isToday = d.key === todayKey;
+    // Cumulative box count at the END of this day:
+    //  - today  -> the LIVE running count (updates as boxes are added)
+    //  - a past/future day with a stamp -> that stamp
+    //  - otherwise -> carry the prior day's cumulative (no activity)
+    let cum;
+    if (isToday) cum = state.completedBoxes;
+    else if (days[d.key] != null) cum = Number(days[d.key]);
+    else cum = prevCum;
+
     const boxesToday = cum - prevCum;
     prevCum = cum;
 
-    const scriptures = boxesToday * state.bookletsPerBox;
-    const isToday = d.key === todayKey;
+    const scriptures = Math.max(0, boxesToday * state.bookletsPerBox);
+    const dayGoal = i <= goalIdx ? perDayGoal : 0;
+    const sub = dayGoal > 0
+      ? `goal ${fmt(dayGoal)} · ${fmt(Math.max(0, boxesToday))} boxes`
+      : `buffer · ${fmt(Math.max(0, boxesToday))} boxes`;
 
+    const hitGoal = dayGoal > 0 && scriptures >= dayGoal;
     const tags =
       (d.isGoal ? `<span class="goal">🎯 GOAL</span>` : "") +
-      (isToday ? `<span class="live">● today</span>` : "");
+      (isToday ? `<span class="live">● today</span>` : "") +
+      (hitGoal ? `<span class="met">✓</span>` : "");
 
     html.push(
       `<div class="daily-row${isToday ? " today" : ""}">
          <div class="day">${d.label}${tags}</div>
-         <div class="val">${fmt(Math.max(0, scriptures))}<small>${fmt(Math.max(0, boxesToday))} boxes</small></div>
+         <div class="val">${fmt(scriptures)}<small>${sub}</small></div>
        </div>`
     );
   });
 
   $("dailyList").innerHTML = html.join("");
-  $("dailyFoot").textContent = "Fills in automatically as boxes are added · 🎯 goal: done by Thursday night";
+  $("dailyFoot").textContent =
+    `Daily goal ${fmt(perDayGoal)} Scriptures · ${fmt(TOTAL_GOAL)} total by Thursday night`;
 }
 
 // Recompute the average once a minute so it keeps moving even when
