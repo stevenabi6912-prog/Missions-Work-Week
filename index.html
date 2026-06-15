@@ -102,6 +102,33 @@
   .stat .cap{font-size:.74rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:5px;}
 
   /* ============================================================
+     DAILY TOTALS
+     ============================================================ */
+  .daily{
+    margin-top:14px; background:var(--card); border:1px solid var(--border);
+    border-radius:18px; padding:16px 16px 14px;
+  }
+  .daily-title{
+    font-size:.74rem; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--muted); font-weight:700; text-align:center; margin-bottom:10px;
+  }
+  .daily-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:11px 12px; border-radius:12px; margin-bottom:6px;
+    background:rgba(255,255,255,0.03); border:1px solid transparent;
+  }
+  .daily-row:last-child{margin-bottom:0;}
+  .daily-row.today{
+    border-color:var(--accent); background:rgba(214,169,63,0.10);
+  }
+  .daily-row .day{font-weight:700; font-size:1rem; display:flex; align-items:center; gap:8px;}
+  .daily-row .day .goal{font-size:.68rem; color:var(--accent); letter-spacing:.05em;}
+  .daily-row .day .live{font-size:.62rem; color:var(--ok); letter-spacing:.08em; text-transform:uppercase;}
+  .daily-row .val{font-weight:800; font-size:1.15rem; color:var(--accent); font-variant-numeric:tabular-nums;}
+  .daily-row .val small{font-size:.68rem; color:var(--muted); font-weight:600; display:block; text-align:right;}
+  .daily-foot{font-size:.72rem; color:var(--muted); text-align:center; margin-top:10px; line-height:1.5;}
+
+  /* ============================================================
      BUTTONS / ADMIN
      ============================================================ */
   .adminbar{margin-top:26px; text-align:center;}
@@ -195,6 +222,13 @@
       <div class="cap">Average / Hour</div>
     </div>
   </div>
+
+  <!-- DAILY TOTALS (auto-populated) -->
+  <section class="daily">
+    <div class="daily-title">Daily Totals</div>
+    <div id="dailyList"></div>
+    <div class="daily-foot" id="dailyFoot"></div>
+  </section>
 
   <!-- ======================================================== -->
   <!-- ADMIN TOGGLE                                              -->
@@ -331,7 +365,7 @@ try {
 }
 
 // Local mirror of the shared state
-let state = { completedBoxes: 0, bookletsPerBox: DEFAULT_BOOKLETS_PER_BOX };
+let state = { completedBoxes: 0, bookletsPerBox: DEFAULT_BOOKLETS_PER_BOX, days: {} };
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -360,6 +394,7 @@ if (stateRef) {
     const v = snap.val() || {};
     state.completedBoxes = Number(v.completedBoxes) || 0;
     state.bookletsPerBox = Number(v.bookletsPerBox) || DEFAULT_BOOKLETS_PER_BOX;
+    state.days = v.days || {};
     render();
     // keep admin's "per box" field showing the current value when idle
     const pbInput = $("perBoxInput");
@@ -390,6 +425,7 @@ function render() {
   lastTotal = total;
 
   renderAvg(total);
+  renderDaily();
 }
 
 // ================================================================
@@ -444,6 +480,68 @@ function renderAvg(total) {
   }
   const avg = total / hours;
   perHourEl.textContent = Math.round(avg).toLocaleString("en-US");
+}
+
+// ================================================================
+// DAILY TOTALS  (auto-derived from cumulative day stamps)
+// ================================================================
+const pad2 = (n) => String(n).padStart(2, "0");
+
+// Today's date key in Eastern Time, as YYYY-MM-DD.
+function todayKeyET() {
+  // en-CA formats as YYYY-MM-DD
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(new Date());
+}
+
+// The 5 weekday dates of the mission week, starting at MISSION_START.
+function missionWeekDates() {
+  const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const base = etDate(MISSION_START.year, MISSION_START.month, MISSION_START.day, 0, 0);
+  const out = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    out.push({
+      key: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+      label: `${names[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`,
+      isGoal: d.getDay() === 4 // Thursday = goal night
+    });
+  }
+  return out;
+}
+
+function renderDaily() {
+  const dates = missionWeekDates();
+  const days = state.days || {};
+  const todayKey = todayKeyET();
+  const html = [];
+  let prevCum = 0; // cumulative boxes at the start of each day
+
+  dates.forEach((d) => {
+    // Cumulative box count recorded on this day; if none, carry the prior value.
+    const cum = (days[d.key] != null) ? Number(days[d.key]) : prevCum;
+    const boxesToday = cum - prevCum;
+    prevCum = cum;
+
+    const scriptures = boxesToday * state.bookletsPerBox;
+    const isToday = d.key === todayKey;
+
+    const tags =
+      (d.isGoal ? `<span class="goal">🎯 GOAL</span>` : "") +
+      (isToday ? `<span class="live">● today</span>` : "");
+
+    html.push(
+      `<div class="daily-row${isToday ? " today" : ""}">
+         <div class="day">${d.label}${tags}</div>
+         <div class="val">${fmt(Math.max(0, scriptures))}<small>${fmt(Math.max(0, boxesToday))} boxes</small></div>
+       </div>`
+    );
+  });
+
+  $("dailyList").innerHTML = html.join("");
+  $("dailyFoot").textContent = "Fills in automatically as boxes are added · 🎯 goal: done by Thursday night";
 }
 
 // Recompute the average once a minute so it keeps moving even when
@@ -511,7 +609,12 @@ function flash(msg, ok) {
 function writeBoxes(newCount) {
   newCount = Math.max(0, Math.floor(newCount));
   stateRef.update({ completedBoxes: newCount, bookletsPerBox: state.bookletsPerBox })
-    .then(() => flash("Saved ✓ — everyone's screen just updated.", true))
+    .then(() => {
+      flash("Saved ✓ — everyone's screen just updated.", true);
+      // Best-effort: stamp today's cumulative count for the daily breakdown.
+      // If this is rejected (rules not updated yet) the core count still saved.
+      stateRef.child("days").child(todayKeyET()).set(newCount).catch(() => {});
+    })
     .catch((e) => flash("Save failed: " + e.message));
 }
 
