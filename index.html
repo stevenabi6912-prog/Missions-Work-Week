@@ -11,16 +11,16 @@
      COLORS / THEME
      ============================================================ */
   :root{
-    --bg:#0b1d3a;
-    --bg2:#102a52;
-    --card:rgba(255,255,255,0.06);
-    --border:rgba(255,255,255,0.14);
-    --text:#f5f8ff;
-    --muted:#9db2d8;
-    --accent:#ffd24d;
-    --accent2:#4dd0a7;
-    --danger:#ff6b6b;
-    --ok:#4dd0a7;
+    --bg:#081730;          /* deep navy */
+    --bg2:#0e2347;
+    --card:rgba(255,255,255,0.05);
+    --border:rgba(214,169,63,0.22);  /* warm gold-tinted edges */
+    --text:#f7f2e4;        /* cream */
+    --muted:#a9b6cf;       /* soft slate */
+    --accent:#d6a93f;      /* rich gold */
+    --accent2:#e6c879;     /* soft gold */
+    --danger:#e0796b;
+    --ok:#7fc8a0;          /* green kept only for the live-sync dot */
   }
 
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
@@ -41,12 +41,13 @@
   }
   header.app h1{
     margin:0;
-    font-size:1.15rem;
-    letter-spacing:.06em;
+    font-size:1.3rem;
+    letter-spacing:.12em;
     text-transform:uppercase;
-    color:var(--muted);
-    font-weight:700;
+    color:var(--text);
+    font-weight:800;
   }
+  header.app h1 span{color:var(--accent);}
   .sync{
     margin-top:6px;
     font-size:.78rem;
@@ -80,7 +81,7 @@
     color:var(--accent);
     margin:8px 0 4px;
     font-variant-numeric:tabular-nums;
-    text-shadow:0 4px 22px rgba(255,210,77,.25);
+    text-shadow:0 4px 26px rgba(214,169,63,.32);
     transition:transform .18s ease;
   }
   .hero .total.bump{transform:scale(1.06);}
@@ -127,9 +128,9 @@
   }
 
   .btn-plus{
-    width:100%; background:var(--accent2); color:#06251c;
+    width:100%; background:var(--accent); color:#0a1730;
     font-size:1.7rem; padding:26px 10px; border-radius:18px; letter-spacing:.02em;
-    box-shadow:0 8px 24px rgba(77,208,167,.35);
+    box-shadow:0 8px 24px rgba(214,169,63,.38);
   }
 
   .row{display:flex; gap:10px; margin-top:14px; align-items:stretch;}
@@ -310,7 +311,12 @@ const TIME_ZONE = "America/New_York";
    ███  END CONFIG — you shouldn't need to edit below  ███
    ================================================================ */
 
-document.getElementById("appTitle").textContent = APP_TITLE;
+(() => {
+  const parts = APP_TITLE.trim().split(/\s+/);
+  document.getElementById("appTitle").innerHTML = parts.length > 1
+    ? `<span>${parts[0]}</span> ${parts.slice(1).join(" ")}`
+    : APP_TITLE;
+})();
 document.title = APP_TITLE;
 
 // ---------- Firebase init ----------
