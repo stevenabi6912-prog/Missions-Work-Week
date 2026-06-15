@@ -443,7 +443,7 @@ function renderAvg(total) {
     return;
   }
   const avg = total / hours;
-  perHourEl.textContent = avg.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  perHourEl.textContent = Math.round(avg).toLocaleString("en-US");
 }
 
 // Recompute the average once a minute so it keeps moving even when
