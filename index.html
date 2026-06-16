@@ -199,6 +199,37 @@
   .login .btn-go{margin-top:12px; width:100%; background:var(--accent); color:#3a2c00; padding:16px; font-size:1.05rem;}
   .err{color:var(--danger); font-size:.85rem; margin-top:10px; min-height:1em;}
 
+  /* ============================================================
+     CELEBRATIONS
+     ============================================================ */
+  .celebrate{
+    position:fixed; inset:0; z-index:1000;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(4,12,28,.82);
+    opacity:0; pointer-events:none; transition:opacity .4s ease;
+  }
+  .celebrate.show{opacity:1; pointer-events:auto;}
+  #cfx{position:fixed; inset:0; z-index:1001; pointer-events:none;}
+  .celebrate-card{position:relative; z-index:1002; text-align:center; padding:0 26px; max-width:520px;}
+  .cel-icon{font-size:72px; line-height:1; animation:celpop .6s cubic-bezier(.2,1.3,.4,1);}
+  .cel-head{
+    margin-top:12px; font-weight:900; color:var(--accent);
+    text-transform:uppercase; letter-spacing:.02em;
+    font-size:clamp(2rem,9vw,3.2rem); line-height:1.05;
+  }
+  .cel-num{
+    margin-top:4px; font-weight:900; color:var(--text);
+    font-size:clamp(2.6rem,13vw,4.2rem); font-variant-numeric:tabular-nums;
+    text-shadow:0 4px 30px rgba(214,169,63,.45);
+  }
+  .cel-sub{margin-top:14px; font-size:1.05rem; color:#cdd6e8; line-height:1.5;}
+  .cel-close{
+    position:fixed; top:16px; right:16px; z-index:1003;
+    width:46px; height:46px; border-radius:50%; border:none;
+    background:rgba(255,255,255,.15); color:var(--text); font-size:22px; cursor:pointer;
+  }
+  @keyframes celpop{0%{transform:scale(0) rotate(-18deg);}100%{transform:scale(1) rotate(0);}}
+
   .hidden{display:none !important;}
 
   footer{margin-top:30px; text-align:center; font-size:.72rem; color:var(--muted);}
@@ -296,6 +327,15 @@
       </div>
     </div>
 
+    <div class="field">
+      <label>Preview celebrations (this device only — not broadcast)</label>
+      <div class="row">
+        <button class="btn-sm" id="test10k" style="flex:1;">🎉 10k</button>
+        <button class="btn-sm" id="test150" style="flex:1;">🚩 Halfway</button>
+        <button class="btn-sm go" id="test300" style="flex:1;">🏆 Goal</button>
+      </div>
+    </div>
+
     <div class="note" id="adminNote"></div>
     <div class="adminbar" style="margin-top:6px;">
       <button class="btn-ghost" id="logoutBtn">Lock & Sign Out</button>
@@ -303,6 +343,20 @@
   </section>
 
   <footer id="missionFooter"></footer>
+</div>
+
+<!-- ======================================================== -->
+<!-- CELEBRATION OVERLAY (synced milestone graphics)           -->
+<!-- ======================================================== -->
+<div class="celebrate" id="celebrate">
+  <canvas id="cfx"></canvas>
+  <div class="celebrate-card">
+    <div class="cel-icon" id="celIcon">🎉</div>
+    <div class="cel-head" id="celHead"></div>
+    <div class="cel-num" id="celNum"></div>
+    <div class="cel-sub" id="celSub"></div>
+  </div>
+  <button class="cel-close" id="celClose" aria-label="Close">✕</button>
 </div>
 
 <!-- ============================================================ -->
@@ -355,6 +409,17 @@ const GOAL_DAY_DOW = 4;           // Thursday night
 //   Time (Michigan). Set it to the MONDAY your mission week begins.
 //   Format: YEAR, MONTH(1-12), DAY, HOUR(24h), MINUTE
 const MISSION_START = { year: 2026, month: 6, day: 15, hour: 9, minute: 0 };
+
+// ---- 4b) CELEBRATIONS ----------------------------------------
+//   Milestone graphics that pop up (synced to every device).
+const CELEBRATE = {
+  smallEvery: 10000,        // small popup each time this many Scriptures is crossed
+  halfAt:     150000,       // "halfway there" celebration
+  goalAt:     300000,       // "goal reached" finale
+  smallMs:    8 * 1000,        // small popup duration  (8 seconds)
+  halfMs:     5 * 60 * 1000,   // halfway duration      (5 minutes)
+  goalMs:     10 * 60 * 1000   // goal duration         (10 minutes)
+};
 
 // ---- 5) WORK WINDOW (rarely needs changing) ------------------
 const WORK_START_HOUR = 9;    // 9 AM
@@ -418,6 +483,7 @@ if (stateRef) {
     state.bookletsPerBox = Number(v.bookletsPerBox) || DEFAULT_BOOKLETS_PER_BOX;
     state.days = v.days || {};
     render();
+    handleCelebrate(v.celebrate);
     // keep admin's "per box" field showing the current value when idle
     const pbInput = $("perBoxInput");
     if (document.activeElement !== pbInput) pbInput.value = state.bookletsPerBox;
@@ -602,6 +668,132 @@ $("missionFooter").textContent =
   `${WORK_START_HOUR}:00 ET · counts weekday ${WORK_START_HOUR}:00–${WORK_END_HOUR}:00 ET only`;
 
 // ================================================================
+// CELEBRATIONS  (confetti + synced milestone overlay)
+// ================================================================
+const celEl = $("celebrate");
+const celCv = $("cfx");
+const celCtx = celCv.getContext("2d");
+const CEL_GOLD = ["#d6a93f", "#e6c879", "#f7f2e4", "#ffffff", "#c8902f", "#b8860b"];
+let celParts = [], celRAF = null, celHideT = null, celSpawnT = null, lastCelKey = null;
+
+function celResize() { celCv.width = window.innerWidth; celCv.height = window.innerHeight; }
+window.addEventListener("resize", celResize);
+celResize();
+
+function celRand(a, b) { return a + Math.random() * (b - a); }
+function celSpawn(n, opts) {
+  opts = opts || {};
+  const W = celCv.width, H = celCv.height;
+  for (let i = 0; i < n; i++) {
+    const rainMode = opts.rain;
+    celParts.push({
+      x: opts.cx != null ? opts.cx : celRand(0, W),
+      y: rainMode ? celRand(-50, -6) : (opts.cy != null ? opts.cy : celRand(0, H)),
+      vx: opts.burst ? celRand(-6, 6) : celRand(-1.6, 1.6),
+      vy: opts.burst ? celRand(-9, -2) : (rainMode ? celRand(2, 5) : celRand(-3, 1)),
+      g: 0.14,
+      size: celRand(6, 13),
+      rot: celRand(0, 6.28), vr: celRand(-0.3, 0.3),
+      color: CEL_GOLD[(Math.random() * CEL_GOLD.length) | 0],
+      shape: Math.random() < 0.5 ? "r" : "c",
+      life: celRand(160, 320)
+    });
+  }
+  if (!celRAF) celLoop();
+}
+function celBurstAt(cx, cy, n) { celSpawn(n, { burst: true, cx: cx, cy: cy }); }
+function celFireworks(times, gap) {
+  let k = 0;
+  const fire = () => {
+    if (k++ >= times || !celEl.classList.contains("show")) return;
+    celBurstAt(celRand(60, celCv.width - 60), celRand(80, celCv.height * 0.45), 50);
+    celSpawnT = setTimeout(fire, gap);
+  };
+  fire();
+}
+function celRainFor(ms, perTick) {
+  const start = Date.now();
+  const tick = () => {
+    if (Date.now() - start > ms || !celEl.classList.contains("show")) return;
+    celSpawn(perTick, { rain: true });
+    celSpawnT = setTimeout(tick, 280);
+  };
+  tick();
+}
+function celLoop() {
+  celRAF = requestAnimationFrame(celLoop);
+  celCtx.clearRect(0, 0, celCv.width, celCv.height);
+  for (let i = celParts.length - 1; i >= 0; i--) {
+    const p = celParts[i];
+    p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life--;
+    if (p.y > celCv.height + 30 || p.life <= 0) { celParts.splice(i, 1); continue; }
+    celCtx.save(); celCtx.translate(p.x, p.y); celCtx.rotate(p.rot);
+    celCtx.globalAlpha = Math.max(0, Math.min(1, p.life / 50));
+    celCtx.fillStyle = p.color;
+    if (p.shape === "r") celCtx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+    else { celCtx.beginPath(); celCtx.arc(0, 0, p.size / 2, 0, 6.28); celCtx.fill(); }
+    celCtx.restore();
+  }
+  if (celParts.length === 0 && !celEl.classList.contains("show")) {
+    cancelAnimationFrame(celRAF); celRAF = null;
+    celCtx.clearRect(0, 0, celCv.width, celCv.height);
+  }
+}
+
+const CEL_COPY = {
+  small: { icon: "🎉", head: "Milestone!",   sub: "Scriptures completed — keep it going!" },
+  half:  { icon: "🚩", head: "Halfway there!", sub: "Half the goal reached — keep pressing on!" },
+  goal:  { icon: "🏆", head: "Goal reached!",  sub: "Praise God — the goal is complete!" }
+};
+
+function celShow(level, value, remainingMs) {
+  const c = CEL_COPY[level] || CEL_COPY.small;
+  $("celIcon").textContent = c.icon;
+  $("celHead").textContent = c.head;
+  $("celNum").textContent = Number(value).toLocaleString("en-US");
+  $("celSub").textContent = c.sub;
+  celEl.classList.add("show");
+
+  // restart the pop animation on the icon
+  const ic = $("celIcon"); ic.style.animation = "none"; void ic.offsetWidth; ic.style.animation = "";
+
+  const cx = celCv.width / 2, cy = celCv.height / 2;
+  if (level === "goal") { celBurstAt(cx, cy, 160); celRainFor(30000, 12); celFireworks(14, 450); }
+  else if (level === "half") { celBurstAt(cx, cy, 110); celRainFor(22000, 9); }
+  else { celBurstAt(cx, cy, 70); celRainFor(2500, 8); }
+
+  if (celHideT) clearTimeout(celHideT);
+  celHideT = setTimeout(celHide, Math.max(1500, remainingMs));
+}
+function celHide() {
+  celEl.classList.remove("show");
+  if (celSpawnT) { clearTimeout(celSpawnT); celSpawnT = null; }
+  if (celHideT) { clearTimeout(celHideT); celHideT = null; }
+}
+$("celClose").addEventListener("click", celHide);
+
+// Admin-only local previews (short auto-close; do NOT broadcast to others).
+$("test10k").addEventListener("click", () => celShow("small", 10000, 8000));
+$("test150").addEventListener("click", () => celShow("half", 150000, 11000));
+$("test300").addEventListener("click", () => celShow("goal", 300000, 13000));
+
+// Show a celebration broadcast from Firebase — on every device, and for
+// late-joiners still inside the time window.
+function handleCelebrate(c) {
+  if (!c || !c.level) return;
+  const key = c.level + ":" + c.value;
+  if (key === lastCelKey) return;           // already handled this milestone
+  lastCelKey = key;
+  const dur = c.level === "goal" ? CELEBRATE.goalMs
+            : c.level === "half" ? CELEBRATE.halfMs
+            : CELEBRATE.smallMs;
+  const at = Number(c.at) || 0;
+  const elapsed = at ? (Date.now() - at) : 0;
+  if (elapsed > dur) return;                 // stale (loaded long after) — skip
+  celShow(c.level, c.value, dur - Math.max(0, elapsed));
+}
+
+// ================================================================
 // ADMIN
 // ================================================================
 const adminToggle = $("adminToggle");
@@ -656,6 +848,11 @@ function flash(msg, ok) {
 
 function writeBoxes(newCount) {
   newCount = Math.max(0, Math.floor(newCount));
+  const per = state.bookletsPerBox;
+  const oldTotal = state.completedBoxes * per;
+  const newTotal = newCount * per;
+  const milestone = detectMilestone(oldTotal, newTotal);
+
   stateRef.update({ completedBoxes: newCount, bookletsPerBox: state.bookletsPerBox })
     .then(() => {
       flash("Saved ✓ — everyone's screen just updated.", true);
@@ -664,8 +861,28 @@ function writeBoxes(newCount) {
       // but we WARN so the daily history isn't silently lost.
       stateRef.child("days").child(todayKeyET()).set(newCount)
         .catch(() => flash("⚠ Count saved, but daily history is NOT saving — publish the updated database rules (see README).", false));
+
+      // Broadcast a milestone celebration to every device (best-effort).
+      if (milestone) {
+        stateRef.child("celebrate").set({
+          level: milestone.level,
+          value: milestone.value,
+          at: firebase.database.ServerValue.TIMESTAMP
+        }).catch(() => {});
+      }
     })
     .catch((e) => flash("Save failed: " + e.message));
+}
+
+// Which milestone (if any) did we just cross going up?
+function detectMilestone(oldTotal, newTotal) {
+  if (newTotal <= oldTotal) return null;
+  if (oldTotal < CELEBRATE.goalAt && newTotal >= CELEBRATE.goalAt) return { level: "goal", value: CELEBRATE.goalAt };
+  if (oldTotal < CELEBRATE.halfAt && newTotal >= CELEBRATE.halfAt) return { level: "half", value: CELEBRATE.halfAt };
+  const oldM = Math.floor(oldTotal / CELEBRATE.smallEvery);
+  const newM = Math.floor(newTotal / CELEBRATE.smallEvery);
+  if (newM > oldM) return { level: "small", value: newM * CELEBRATE.smallEvery };
+  return null;
 }
 
 // +1 box
