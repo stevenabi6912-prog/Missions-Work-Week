@@ -660,8 +660,10 @@ function writeBoxes(newCount) {
     .then(() => {
       flash("Saved ✓ — everyone's screen just updated.", true);
       // Best-effort: stamp today's cumulative count for the daily breakdown.
-      // If this is rejected (rules not updated yet) the core count still saved.
-      stateRef.child("days").child(todayKeyET()).set(newCount).catch(() => {});
+      // If this is rejected (rules not updated yet) the core count still saved,
+      // but we WARN so the daily history isn't silently lost.
+      stateRef.child("days").child(todayKeyET()).set(newCount)
+        .catch(() => flash("⚠ Count saved, but daily history is NOT saving — publish the updated database rules (see README).", false));
     })
     .catch((e) => flash("Save failed: " + e.message));
 }
