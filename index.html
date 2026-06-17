@@ -103,6 +103,16 @@
   }
   .goalpct{font-size:.8rem; color:var(--muted); margin-top:8px;}
   .goalpct b{color:var(--accent);}
+  .pace{
+    display:inline-block; margin-top:12px; font-size:.82rem; font-weight:700;
+    padding:6px 14px; border-radius:20px; letter-spacing:.02em;
+  }
+  .pace:empty{display:none;}
+  .pace.ahead{background:rgba(127,200,160,.16); color:#9fe0c0; border:1px solid rgba(127,200,160,.45);}
+  .pace.behind{background:rgba(224,121,107,.15); color:#f0a99c; border:1px solid rgba(224,121,107,.45);}
+  .pace.done{background:rgba(214,169,63,.18); color:var(--accent); border:1px solid rgba(214,169,63,.5);}
+  .proj{font-size:.78rem; color:var(--muted); margin-top:10px;}
+  .proj b{color:var(--text);}
 
   /* ============================================================
      STAT CARDS
@@ -297,6 +307,8 @@
     <div class="sub" id="heroSub">&nbsp;</div>
     <div class="goalbar"><div class="goalbar-fill" id="goalFill"></div></div>
     <div class="goalpct" id="goalPct">&nbsp;</div>
+    <div class="pace" id="paceBadge"></div>
+    <div class="proj" id="projFinish">&nbsp;</div>
   </section>
 
   <div class="stats">
@@ -460,7 +472,7 @@ const APP_TITLE = "Scriptures Completed";
 // ---- 3b) WEEK GOAL -------------------------------------------
 //   Total Scriptures goal for the week, split evenly across the
 //   working days up to (and including) the GOAL day below.
-const APP_VERSION = "v9";         // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v10";        // shown in the footer so you can confirm a device is up to date
 const TOTAL_GOAL = 300000;        // grand total goal for the week
 //   Day the goal should be hit (0=Sun … 4=Thu … 5=Fri). Days after
 //   this one are shown as "buffer" with no daily goal.
@@ -584,20 +596,36 @@ function fitTotal() {
 window.addEventListener("resize", fitTotal);
 
 // ---------- Render dashboard ----------
-let lastTotal = null;
+let lastTotal = null, countRAF = null;
+
+// Roll the big number up to its new value (odometer style).
+function animateCount(from, to) {
+  if (countRAF) cancelAnimationFrame(countRAF);
+  const dur = 700, t0 = performance.now();
+  const step = (t) => {
+    const p = Math.min(1, (t - t0) / dur);
+    const eased = 1 - Math.pow(1 - p, 3);   // easeOutCubic
+    totalEl.textContent = fmt(Math.round(from + (to - from) * eased));
+    if (p < 1) countRAF = requestAnimationFrame(step);
+    else { totalEl.textContent = fmt(to); countRAF = null; }
+  };
+  countRAF = requestAnimationFrame(step);
+}
+
 function render() {
   const total = state.completedBoxes * state.bookletsPerBox;
+  // Size to the FINAL value first (so the roll never overflows), then roll up.
   totalEl.textContent = fmt(total);
   fitTotal();
-  boxEl.textContent   = fmt(state.completedBoxes);
-  heroSub.textContent = `${fmt(state.completedBoxes)} boxes × ${fmt(state.bookletsPerBox)} booklets`;
-
-  // little "bump" animation when the total changes
   if (lastTotal !== null && total !== lastTotal) {
+    animateCount(lastTotal, total);
     totalEl.classList.add("bump");
     setTimeout(() => totalEl.classList.remove("bump"), 180);
   }
   lastTotal = total;
+
+  boxEl.textContent   = fmt(state.completedBoxes);
+  heroSub.textContent = `${fmt(state.completedBoxes)} boxes × ${fmt(state.bookletsPerBox)} booklets`;
 
   // overall progress toward the week goal
   const pct = TOTAL_GOAL > 0 ? Math.min(100, (total / TOTAL_GOAL) * 100) : 0;
@@ -605,7 +633,7 @@ function render() {
   $("goalPct").innerHTML =
     `<b>${pct.toFixed(1)}%</b> of ${fmt(TOTAL_GOAL)} goal · ${fmt(Math.max(0, TOTAL_GOAL - total))} to go`;
 
-  renderAvg(total);
+  renderAvgPaceProjection(total);
   renderDaily();
 }
 
@@ -649,18 +677,80 @@ function workingHoursBetween(start, end) {
   return total;
 }
 
-function renderAvg(total) {
+// The goal deadline: the goal day (Thursday) at the end of the work window.
+function goalDeadline() {
+  const dates = missionWeekDates();
+  const g = dates.find((d) => d.isGoal) || dates[dates.length - 1];
+  const p = g.key.split("-").map(Number);
+  return etDate(p[0], p[1], p[2], WORK_END_HOUR, 0);
+}
+
+// Add N working hours to a start time, skipping nights/weekends — used to
+// project when the goal will be reached at the current pace.
+function addWorkingHours(start, hoursToAdd) {
+  if (hoursToAdd <= 0) return new Date(start);
+  let remaining = hoursToAdd * 3600000;
+  let cur = new Date(start);
+  for (let guard = 0; guard < 400 && remaining > 0; guard++) {
+    if (WORK_DAYS.includes(cur.getDay())) {
+      const winStart = new Date(cur); winStart.setHours(WORK_START_HOUR, 0, 0, 0);
+      const winEnd   = new Date(cur); winEnd.setHours(WORK_END_HOUR, 0, 0, 0);
+      const segStart = cur < winStart ? winStart : cur;
+      if (segStart < winEnd) {
+        const avail = winEnd - segStart;
+        if (remaining <= avail) return new Date(segStart.getTime() + remaining);
+        remaining -= avail;
+      }
+    }
+    cur.setDate(cur.getDate() + 1);
+    cur.setHours(WORK_START_HOUR, 0, 0, 0);
+  }
+  return cur;
+}
+
+function fmtDateTime(d) {
+  const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  let h = d.getHours(); const ap = h >= 12 ? "PM" : "AM"; let hh = h % 12; if (hh === 0) hh = 12;
+  return `${names[d.getDay()]} ${hh}:${pad2(d.getMinutes())} ${ap}`;
+}
+
+function renderAvgPaceProjection(total) {
   const start = etDate(MISSION_START.year, MISSION_START.month, MISSION_START.day,
                        MISSION_START.hour, MISSION_START.minute);
   const now = nowInET();
-  const hours = workingHoursBetween(start, now);
+  const elapsed = workingHoursBetween(start, now);
+  const avgPerHour = elapsed > 0 ? total / elapsed : 0;
 
-  if (hours <= 0) {
-    perHourEl.textContent = total > 0 ? "—" : "0";
-    return;
+  // Average / hour
+  perHourEl.textContent = elapsed > 0
+    ? Math.round(avgPerHour).toLocaleString("en-US")
+    : (total > 0 ? "—" : "0");
+
+  // On-pace badge: compare actual vs. the straight-line pace needed to hit
+  // TOTAL_GOAL by the deadline.
+  const paceEl = $("paceBadge");
+  const totalHrs = workingHoursBetween(start, goalDeadline());
+  if (total >= TOTAL_GOAL) {
+    paceEl.className = "pace done"; paceEl.textContent = "🎉 Goal reached!";
+  } else if (totalHrs > 0) {
+    const expected = TOTAL_GOAL * Math.min(1, elapsed / totalHrs);
+    const diff = Math.round(total - expected);
+    if (diff >= 0) { paceEl.className = "pace ahead";  paceEl.textContent = "● On pace — ahead by " + fmt(diff); }
+    else           { paceEl.className = "pace behind"; paceEl.textContent = "● Behind by " + fmt(-diff); }
+  } else {
+    paceEl.className = "pace"; paceEl.textContent = "";
   }
-  const avg = total / hours;
-  perHourEl.textContent = Math.round(avg).toLocaleString("en-US");
+
+  // Projected finish at current pace
+  const projEl = $("projFinish");
+  if (total >= TOTAL_GOAL) {
+    projEl.innerHTML = "<b>" + fmt(TOTAL_GOAL) + " complete</b> 🙌";
+  } else if (avgPerHour > 0) {
+    const finish = addWorkingHours(now, (TOTAL_GOAL - total) / avgPerHour);
+    projEl.innerHTML = "At this pace, <b>" + fmt(TOTAL_GOAL) + " by " + fmtDateTime(finish) + "</b>";
+  } else {
+    projEl.textContent = "Projected finish: —";
+  }
 }
 
 // ================================================================
