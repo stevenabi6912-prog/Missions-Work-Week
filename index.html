@@ -303,27 +303,65 @@
   body.present #missionFooter,
   body.present header.app .sync{ display:none !important; }
 
-  /* Enlarge the important numbers for viewing from across the room.
+  /* Fill the whole screen for projector / TV viewing. Sizes are
+     viewport-relative (vw/vh/clamp) so the layout scales from a phone
+     up to a 4K wall display, with no fixed max-width leaving dead borders.
      (No !important on .total so fitTotal() can still shrink it to fit.) */
-  body.present .wrap{max-width:900px;}
-  body.present header.app h1{font-size:1.8rem;}
-  body.present .hero{padding:38px 22px 30px;}
-  body.present .hero .label{font-size:1.05rem;}
-  body.present .hero .total{font-size:clamp(4rem, 22vw, 11rem); line-height:1.02;}
-  body.present .hero .sub{font-size:1.25rem;}
-  body.present .goalbar{max-width:520px; height:16px;}
-  body.present .goalpct{font-size:1.15rem;}
-  body.present .pace{font-size:1.35rem; padding:10px 24px; margin-top:18px;}
-  body.present .proj{font-size:1.2rem; margin-top:12px;}
-  body.present .stat .num{font-size:3.2rem;}
-  body.present .stat .cap{font-size:.95rem;}
-  body.present .daily-title{font-size:1.1rem;}
-  body.present .daily-row .day{font-size:1.5rem;}
-  body.present .daily-row .val{font-size:1.7rem;}
-  body.present .daily-row .val small{font-size:.95rem;}
-  body.present .day-bar{height:14px;}
-  body.present .day-bar-cap{font-size:1rem;}
-  body.present .daily-foot{font-size:.95rem;}
+  body.present{overflow:hidden;}
+  body.present .wrap{
+    max-width:none; width:100vw; min-height:100vh;
+    margin:0; padding:3.2vh 3vw;
+    display:flex; flex-direction:column; justify-content:center; gap:2.4vh;
+  }
+  body.present header.app{padding:0;}
+  body.present header.app h1{font-size:clamp(1.6rem, 3vw, 4.5rem); letter-spacing:.14em;}
+
+  body.present .hero{
+    margin:0; padding:clamp(20px,3vh,52px) clamp(20px,3vw,64px); border-radius:28px;
+  }
+  body.present .hero .label{font-size:clamp(1rem, 1.7vw, 2.4rem);}
+  body.present .hero .total{font-size:clamp(4rem, 15vw, 26rem); line-height:1.0;}
+  body.present .hero .sub{font-size:clamp(1.1rem, 1.8vw, 2.6rem);}
+  body.present .goalbar{max-width:min(60vw,760px); height:clamp(12px,1.4vh,24px);}
+  body.present .goalpct{font-size:clamp(1rem,1.5vw,2.1rem);}
+  body.present .pace{font-size:clamp(1.1rem,1.8vw,2.4rem); padding:10px 24px; margin-top:1.6vh;}
+  body.present .proj{font-size:clamp(1rem,1.5vw,2.1rem); margin-top:1vh;}
+
+  body.present .stats{gap:2vw; margin:0;}
+  body.present .stat{padding:clamp(16px,2.4vh,44px) clamp(14px,2vw,44px); border-radius:22px;}
+  body.present .stat .num{font-size:clamp(2.4rem, 5vw, 8rem);}
+  body.present .stat .cap{font-size:clamp(.85rem,1.2vw,1.7rem);}
+
+  body.present .daily{margin:0; padding:clamp(16px,2vh,36px) clamp(16px,2vw,40px); border-radius:22px;}
+  body.present .daily-title{font-size:clamp(1rem,1.5vw,2.1rem);}
+  body.present .daily-row{padding:clamp(10px,1.4vh,22px) clamp(12px,1.4vw,26px);}
+  body.present .daily-row .day{font-size:clamp(1.2rem,1.8vw,2.8rem);}
+  body.present .daily-row .val{font-size:clamp(1.3rem,2vw,3.1rem);}
+  body.present .daily-row .val small{font-size:clamp(.8rem,1.1vw,1.5rem);}
+  body.present .day-bar{height:clamp(8px,1.1vh,18px);}
+  body.present .day-bar-cap{font-size:clamp(.8rem,1.1vw,1.5rem);}
+  body.present .daily-foot{font-size:clamp(.8rem,1.1vw,1.6rem);}
+
+  /* Landscape TVs / monitors: two columns that fill the full width & height,
+     so the hero, stats and daily breakdown reach close to every edge. */
+  @media (orientation:landscape) and (min-width:1000px){
+    body.present .wrap{
+      display:grid; height:100vh;
+      grid-template-columns:1.05fr .95fr;
+      grid-template-rows:auto auto 1fr;
+      grid-template-areas:
+        "header header"
+        "hero   daily"
+        "stats  daily";
+      align-content:stretch; column-gap:3vw; row-gap:2.2vh;
+    }
+    body.present header.app{grid-area:header; align-self:center;}
+    body.present .hero{grid-area:hero; display:flex; flex-direction:column; justify-content:center;}
+    body.present .hero .total{font-size:clamp(5rem, 11vw, 24rem);}
+    body.present .stats{grid-area:stats; align-content:center;}
+    body.present .daily{grid-area:daily; overflow:auto; display:flex; flex-direction:column;}
+    body.present .daily #dailyList{flex:1;}
+  }
 
   .hidden{display:none !important;}
 
