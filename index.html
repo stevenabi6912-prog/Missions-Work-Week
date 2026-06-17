@@ -674,7 +674,7 @@ const celEl = $("celebrate");
 const celCv = $("cfx");
 const celCtx = celCv.getContext("2d");
 const CEL_GOLD = ["#d6a93f", "#e6c879", "#f7f2e4", "#ffffff", "#c8902f", "#b8860b"];
-let celParts = [], celRAF = null, celHideT = null, celSpawnT = null;
+let celParts = [], celRAF = null, celHideT = null, celRainT = null, celFwT = null;
 let lastCelAt = 0, localEchoKey = null, localEchoUntil = 0;
 
 function celResize() { celCv.width = window.innerWidth; celCv.height = window.innerHeight; }
@@ -703,12 +703,12 @@ function celSpawn(n, opts) {
   if (!celRAF) celLoop();
 }
 function celBurstAt(cx, cy, n) { celSpawn(n, { burst: true, cx: cx, cy: cy }); }
-function celFireworks(times, gap) {
-  let k = 0;
+function celFireworksFor(ms, gap) {
+  const start = Date.now();
   const fire = () => {
-    if (k++ >= times || !celEl.classList.contains("show")) return;
-    celBurstAt(celRand(60, celCv.width - 60), celRand(80, celCv.height * 0.45), 50);
-    celSpawnT = setTimeout(fire, gap);
+    if (Date.now() - start > ms || !celEl.classList.contains("show")) return;
+    celBurstAt(celRand(60, celCv.width - 60), celRand(80, celCv.height * 0.45), 44);
+    celFwT = setTimeout(fire, gap);
   };
   fire();
 }
@@ -717,7 +717,7 @@ function celRainFor(ms, perTick) {
   const tick = () => {
     if (Date.now() - start > ms || !celEl.classList.contains("show")) return;
     celSpawn(perTick, { rain: true });
-    celSpawnT = setTimeout(tick, 280);
+    celRainT = setTimeout(tick, 280);
   };
   tick();
 }
@@ -748,7 +748,8 @@ const CEL_COPY = {
 };
 
 function celShow(level, value, remainingMs) {
-  if (celSpawnT) { clearTimeout(celSpawnT); celSpawnT = null; }
+  if (celRainT) { clearTimeout(celRainT); celRainT = null; }
+  if (celFwT) { clearTimeout(celFwT); celFwT = null; }
   const c = CEL_COPY[level] || CEL_COPY.small;
   $("celIcon").textContent = c.icon;
   $("celHead").textContent = c.head;
@@ -760,16 +761,18 @@ function celShow(level, value, remainingMs) {
   const ic = $("celIcon"); ic.style.animation = "none"; void ic.offsetWidth; ic.style.animation = "";
 
   const cx = celCv.width / 2, cy = celCv.height / 2;
-  if (level === "goal") { celBurstAt(cx, cy, 160); celRainFor(30000, 12); celFireworks(14, 450); }
-  else if (level === "half") { celBurstAt(cx, cy, 110); celRainFor(22000, 9); }
-  else { celBurstAt(cx, cy, 70); celRainFor(2500, 8); }
+  // Confetti runs for the ENTIRE remaining duration (until the overlay closes).
+  if (level === "goal") { celBurstAt(cx, cy, 160); celRainFor(remainingMs, 10); celFireworksFor(remainingMs, 650); }
+  else if (level === "half") { celBurstAt(cx, cy, 110); celRainFor(remainingMs, 8); }
+  else { celBurstAt(cx, cy, 70); celRainFor(remainingMs, 8); }
 
   if (celHideT) clearTimeout(celHideT);
   celHideT = setTimeout(celHide, Math.max(1500, remainingMs));
 }
 function celHide() {
   celEl.classList.remove("show");
-  if (celSpawnT) { clearTimeout(celSpawnT); celSpawnT = null; }
+  if (celRainT) { clearTimeout(celRainT); celRainT = null; }
+  if (celFwT) { clearTimeout(celFwT); celFwT = null; }
   if (celHideT) { clearTimeout(celHideT); celHideT = null; }
 }
 $("celClose").addEventListener("click", celHide);
