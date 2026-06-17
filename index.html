@@ -136,6 +136,7 @@
   .daily-row .day .goal{font-size:.68rem; color:var(--accent); letter-spacing:.05em;}
   .daily-row .day .live{font-size:.62rem; color:var(--ok); letter-spacing:.08em; text-transform:uppercase;}
   .daily-row .day .met{font-size:.85rem; color:var(--ok); font-weight:800;}
+  .daily-row .day .miss{font-size:.95rem; line-height:1;}
   .daily-row .val{font-weight:800; font-size:1.15rem; color:var(--accent); font-variant-numeric:tabular-nums;}
   .daily-row .val small{font-size:.68rem; color:var(--muted); font-weight:600; display:block; text-align:right;}
   .daily-foot{font-size:.72rem; color:var(--muted); text-align:center; margin-top:10px; line-height:1.5;}
@@ -229,6 +230,37 @@
     background:rgba(255,255,255,.15); color:var(--text); font-size:22px; cursor:pointer;
   }
   @keyframes celpop{0%{transform:scale(0) rotate(-18deg);}100%{transform:scale(1) rotate(0);}}
+
+  /* ============================================================
+     WEEK SUMMARY (shown after the 300k celebration, stays up)
+     ============================================================ */
+  .summary{
+    position:fixed; inset:0; z-index:1100;
+    background:linear-gradient(160deg,#081730,#0e2347);
+    display:flex; align-items:flex-start; justify-content:center;
+    overflow-y:auto; padding:32px 18px;
+  }
+  .summary-inner{max-width:460px; width:100%; text-align:center; color:var(--text);}
+  .summary-badge{font-size:60px; line-height:1; animation:celpop .6s cubic-bezier(.2,1.3,.4,1);}
+  .summary-inner h2{
+    font-size:1.35rem; color:var(--accent); text-transform:uppercase;
+    letter-spacing:.04em; margin:6px 0 18px; font-weight:900;
+  }
+  .summary-total{
+    font-size:clamp(3rem,16vw,4.6rem); font-weight:900; color:var(--accent);
+    line-height:1; font-variant-numeric:tabular-nums; text-shadow:0 4px 26px rgba(214,169,63,.35);
+  }
+  .summary-label{font-size:.78rem; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-top:6px;}
+  .summary-stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:22px 0;}
+  .summary-stats > div{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 6px;}
+  .summary-stats .sv{font-size:1.5rem; font-weight:800; color:var(--accent2); font-variant-numeric:tabular-nums;}
+  .summary-stats .sc{font-size:.64rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-top:4px;}
+  .summary-daily{text-align:left; background:var(--card); border:1px solid var(--border); border-radius:16px; padding:6px 14px; margin-bottom:20px;}
+  .sum-row{display:flex; justify-content:space-between; align-items:center; padding:11px 2px; border-bottom:1px solid rgba(255,255,255,.07); font-size:1rem;}
+  .sum-row:last-child{border-bottom:none;}
+  .sum-row .met{color:var(--ok); font-weight:800; margin-left:5px;}
+  .sum-row b{color:var(--accent); font-variant-numeric:tabular-nums;}
+  .summary-close{background:transparent; color:var(--muted); border:1px solid var(--border); padding:12px 26px; font-size:.9rem; border-radius:12px; letter-spacing:.04em;}
 
   .hidden{display:none !important;}
 
@@ -357,6 +389,25 @@
     <div class="cel-sub" id="celSub"></div>
   </div>
   <button class="cel-close" id="celClose" aria-label="Close">✕</button>
+</div>
+
+<!-- ======================================================== -->
+<!-- WEEK SUMMARY (auto-shows after the 300k celebration)      -->
+<!-- ======================================================== -->
+<div class="summary hidden" id="summary">
+  <div class="summary-inner">
+    <div class="summary-badge">🏆</div>
+    <h2>Goal reached — week complete!</h2>
+    <div class="summary-total" id="sumTotal">—</div>
+    <div class="summary-label">Total Scriptures Completed</div>
+    <div class="summary-stats">
+      <div><div class="sv" id="sumBoxes">—</div><div class="sc">Boxes</div></div>
+      <div><div class="sv" id="sumAvg">—</div><div class="sc">Avg / Hour</div></div>
+      <div><div class="sv" id="sumDaysHit">—</div><div class="sc">Days on goal</div></div>
+    </div>
+    <div class="summary-daily" id="sumDaily"></div>
+    <button class="summary-close" id="sumClose">Back to dashboard</button>
+  </div>
 </div>
 
 <!-- ============================================================ -->
@@ -606,7 +657,8 @@ function missionWeekDates() {
   return out;
 }
 
-function renderDaily() {
+// Compute each mission-week day's production, goal, and met/missed status.
+function computeDailyRows() {
   const dates = missionWeekDates();
   const days = state.days || {};
   const todayKey = todayKeyET();
@@ -616,10 +668,8 @@ function renderDaily() {
   const goalDays = goalIdx >= 0 ? goalIdx + 1 : dates.length;
   const perDayGoal = Math.round(TOTAL_GOAL / goalDays);
 
-  const html = [];
   let prevCum = 0; // cumulative boxes at the start of each day
-
-  dates.forEach((d, i) => {
+  const rows = dates.map((d, i) => {
     const isToday = d.key === todayKey;
     // Cumulative box count at the END of this day:
     //  - today  -> the LIVE running count (updates as boxes are added)
@@ -630,30 +680,39 @@ function renderDaily() {
     else if (days[d.key] != null) cum = Number(days[d.key]);
     else cum = prevCum;
 
-    const boxesToday = cum - prevCum;
+    const boxesToday = Math.max(0, cum - prevCum);
     prevCum = cum;
 
-    const scriptures = Math.max(0, boxesToday * state.bookletsPerBox);
+    const scriptures = boxesToday * state.bookletsPerBox;
     const dayGoal = i <= goalIdx ? perDayGoal : 0;
-    const sub = dayGoal > 0
-      ? `goal ${fmt(dayGoal)} · ${fmt(Math.max(0, boxesToday))} boxes`
-      : `buffer · ${fmt(Math.max(0, boxesToday))} boxes`;
+    const isPast = d.key < todayKey;   // a fully-finished day
+    const met = dayGoal > 0 && scriptures >= dayGoal;
+    const missed = dayGoal > 0 && isPast && scriptures < dayGoal;
 
-    const hitGoal = dayGoal > 0 && scriptures >= dayGoal;
-    const tags =
-      (d.isGoal ? `<span class="goal">🎯 GOAL</span>` : "") +
-      (isToday ? `<span class="live">● today</span>` : "") +
-      (hitGoal ? `<span class="met">✓</span>` : "");
-
-    html.push(
-      `<div class="daily-row${isToday ? " today" : ""}">
-         <div class="day">${d.label}${tags}</div>
-         <div class="val">${fmt(scriptures)}<small>${sub}</small></div>
-       </div>`
-    );
+    return Object.assign({}, d, { scriptures, boxes: boxesToday, dayGoal, isToday, isPast, met, missed });
   });
 
-  $("dailyList").innerHTML = html.join("");
+  return { rows, perDayGoal, goalDays };
+}
+
+function renderDaily() {
+  const { rows, perDayGoal } = computeDailyRows();
+  const html = rows.map((d) => {
+    const sub = d.dayGoal > 0
+      ? `goal ${fmt(d.dayGoal)} · ${fmt(d.boxes)} boxes`
+      : `buffer · ${fmt(d.boxes)} boxes`;
+    const tags =
+      (d.isGoal ? `<span class="goal">🎯 GOAL</span>` : "") +
+      (d.isToday ? `<span class="live">● today</span>` : "") +
+      (d.met ? `<span class="met">✓</span>` : "") +
+      (d.missed ? `<span class="miss">😞</span>` : "");
+    return `<div class="daily-row${d.isToday ? " today" : ""}">
+         <div class="day">${d.label}${tags}</div>
+         <div class="val">${fmt(d.scriptures)}<small>${sub}</small></div>
+       </div>`;
+  }).join("");
+
+  $("dailyList").innerHTML = html;
   $("dailyFoot").textContent =
     `Daily goal ${fmt(perDayGoal)} Scriptures · ${fmt(TOTAL_GOAL)} total by Thursday night`;
 }
@@ -675,7 +734,7 @@ const celCv = $("cfx");
 const celCtx = celCv.getContext("2d");
 const CEL_GOLD = ["#d6a93f", "#e6c879", "#f7f2e4", "#ffffff", "#c8902f", "#b8860b"];
 let celParts = [], celRAF = null, celHideT = null, celRainT = null, celFwT = null;
-let lastCelAt = 0, localEchoKey = null, localEchoUntil = 0;
+let lastCelAt = 0, localEchoKey = null, localEchoUntil = 0, celCurrentLevel = null;
 
 function celResize() { celCv.width = window.innerWidth; celCv.height = window.innerHeight; }
 window.addEventListener("resize", celResize);
@@ -755,6 +814,7 @@ function celShow(level, value, remainingMs) {
   $("celHead").textContent = c.head;
   $("celNum").textContent = Number(value).toLocaleString("en-US");
   $("celSub").textContent = c.sub;
+  celCurrentLevel = level;
   celEl.classList.add("show");
 
   // restart the pop animation on the icon
@@ -770,12 +830,37 @@ function celShow(level, value, remainingMs) {
   celHideT = setTimeout(celHide, Math.max(1500, remainingMs));
 }
 function celHide() {
+  const wasLevel = celCurrentLevel;
+  celCurrentLevel = null;
   celEl.classList.remove("show");
   if (celRainT) { clearTimeout(celRainT); celRainT = null; }
   if (celFwT) { clearTimeout(celFwT); celFwT = null; }
   if (celHideT) { clearTimeout(celHideT); celHideT = null; }
+  // After the goal celebration comes down, show the week summary and leave it up.
+  if (wasLevel === "goal") showWeekSummary();
 }
 $("celClose").addEventListener("click", celHide);
+
+// ===== WEEK SUMMARY =====
+function showWeekSummary() {
+  const { rows } = computeDailyRows();
+  const total = state.completedBoxes * state.bookletsPerBox;
+  const goalRows = rows.filter((r) => r.dayGoal > 0);
+  const hit = goalRows.filter((r) => r.met).length;
+
+  $("sumTotal").textContent = fmt(total);
+  $("sumBoxes").textContent = fmt(state.completedBoxes);
+  $("sumAvg").textContent = $("perHour").textContent;          // current average/hour
+  $("sumDaysHit").textContent = hit + "/" + goalRows.length;
+
+  $("sumDaily").innerHTML = rows.map((d) => {
+    const mark = d.met ? '<span class="met">✓</span>' : (d.missed ? " 😞" : "");
+    return `<div class="sum-row"><span>${d.label}${mark}</span><b>${fmt(d.scriptures)}</b></div>`;
+  }).join("");
+
+  $("summary").classList.remove("hidden");
+}
+$("sumClose").addEventListener("click", () => $("summary").classList.add("hidden"));
 
 // Admin-only local previews (short auto-close; do NOT broadcast to others).
 $("test10k").addEventListener("click", () => celShow("small", 10000, 8000));
