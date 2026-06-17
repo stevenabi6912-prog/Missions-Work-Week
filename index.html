@@ -282,6 +282,49 @@
   .sum-row b{color:var(--accent); font-variant-numeric:tabular-nums;}
   .summary-close{background:transparent; color:var(--muted); border:1px solid var(--border); padding:12px 26px; font-size:.9rem; border-radius:12px; letter-spacing:.04em;}
 
+  /* ============================================================
+     PRESENT MODE (projector-friendly)
+     ============================================================ */
+  .btn-present{
+    width:100%; background:#27406e; color:var(--text); border:1px solid var(--border);
+    padding:16px 10px; font-size:1.05rem; border-radius:14px; margin-bottom:16px;
+  }
+  .exit-present{
+    display:none; position:fixed; top:16px; right:16px; z-index:1200;
+    background:rgba(255,255,255,.14); color:var(--text); border:1px solid var(--border);
+    padding:10px 16px; font-size:.9rem; border-radius:12px; cursor:pointer;
+  }
+  body.present .exit-present{display:block;}
+
+  /* Hide controls/chrome on the projector */
+  body.present .adminbar,
+  body.present #adminPanel,
+  body.present #loginPanel,
+  body.present #missionFooter,
+  body.present header.app .sync{ display:none !important; }
+
+  /* Enlarge the important numbers for viewing from across the room.
+     (No !important on .total so fitTotal() can still shrink it to fit.) */
+  body.present .wrap{max-width:900px;}
+  body.present header.app h1{font-size:1.8rem;}
+  body.present .hero{padding:38px 22px 30px;}
+  body.present .hero .label{font-size:1.05rem;}
+  body.present .hero .total{font-size:clamp(4rem, 22vw, 11rem); line-height:1.02;}
+  body.present .hero .sub{font-size:1.25rem;}
+  body.present .goalbar{max-width:520px; height:16px;}
+  body.present .goalpct{font-size:1.15rem;}
+  body.present .pace{font-size:1.35rem; padding:10px 24px; margin-top:18px;}
+  body.present .proj{font-size:1.2rem; margin-top:12px;}
+  body.present .stat .num{font-size:3.2rem;}
+  body.present .stat .cap{font-size:.95rem;}
+  body.present .daily-title{font-size:1.1rem;}
+  body.present .daily-row .day{font-size:1.5rem;}
+  body.present .daily-row .val{font-size:1.7rem;}
+  body.present .daily-row .val small{font-size:.95rem;}
+  body.present .day-bar{height:14px;}
+  body.present .day-bar-cap{font-size:1rem;}
+  body.present .daily-foot{font-size:.95rem;}
+
   .hidden{display:none !important;}
 
   footer{margin-top:30px; text-align:center; font-size:.72rem; color:var(--muted);}
@@ -348,6 +391,8 @@
   <section class="admin hidden" id="adminPanel">
     <h2>Admin Controls</h2>
 
+    <button class="btn-present" id="presentBtn">🖥 Present mode (for projector)</button>
+
     <button class="btn-plus" id="plusBox">+1 Box</button>
 
     <div class="field">
@@ -398,6 +443,9 @@
 
   <footer id="missionFooter"></footer>
 </div>
+
+<!-- Exit button shown only in present mode -->
+<button class="exit-present" id="exitPresent">✕ Exit present</button>
 
 <!-- ======================================================== -->
 <!-- CELEBRATION OVERLAY (synced milestone graphics)           -->
@@ -472,7 +520,7 @@ const APP_TITLE = "Scriptures Completed";
 // ---- 3b) WEEK GOAL -------------------------------------------
 //   Total Scriptures goal for the week, split evenly across the
 //   working days up to (and including) the GOAL day below.
-const APP_VERSION = "v10";        // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v11";        // shown in the footer so you can confirm a device is up to date
 const TOTAL_GOAL = 300000;        // grand total goal for the week
 //   Day the goal should be hit (0=Sun … 4=Thu … 5=Fri). Days after
 //   this one are shown as "buffer" with no daily goal.
@@ -1005,6 +1053,25 @@ $("sumClose").addEventListener("click", () => $("summary").classList.add("hidden
 $("test10k").addEventListener("click", () => celShow("small", 10000, 8000));
 $("test150").addEventListener("click", () => celShow("half", 150000, 11000));
 $("test300").addEventListener("click", () => celShow("goal", 300000, 13000));
+
+// ===== PRESENT MODE (projector layout) =====
+function enterPresent() {
+  document.body.classList.add("present");
+  try { (document.documentElement.requestFullscreen || (() => {})).call(document.documentElement); } catch (e) {}
+  fitTotal();   // re-fit the big number to the new (wider) layout
+}
+function exitPresent() {
+  document.body.classList.remove("present");
+  try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {}
+  fitTotal();
+}
+$("presentBtn").addEventListener("click", enterPresent);
+$("exitPresent").addEventListener("click", exitPresent);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.body.classList.contains("present")) exitPresent(); });
+// If they leave fullscreen via the system (Esc), drop present mode too.
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && document.body.classList.contains("present")) exitPresent();
+});
 
 function celDur(level) {
   return level === "goal" ? CELEBRATE.goalMs
