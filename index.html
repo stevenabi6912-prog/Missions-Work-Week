@@ -520,7 +520,7 @@ const APP_TITLE = "Scriptures Completed";
 // ---- 3b) WEEK GOAL -------------------------------------------
 //   Total Scriptures goal for the week, split evenly across the
 //   working days up to (and including) the GOAL day below.
-const APP_VERSION = "v11";        // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v12";        // shown in the footer so you can confirm a device is up to date
 const TOTAL_GOAL = 300000;        // grand total goal for the week
 //   Day the goal should be hit (0=Sun … 4=Thu … 5=Fri). Days after
 //   this one are shown as "buffer" with no daily goal.
@@ -1058,19 +1058,23 @@ $("test300").addEventListener("click", () => celShow("goal", 300000, 13000));
 function enterPresent() {
   document.body.classList.add("present");
   try { (document.documentElement.requestFullscreen || (() => {})).call(document.documentElement); } catch (e) {}
-  fitTotal();   // re-fit the big number to the new (wider) layout
+  fitTotal();    // re-fit the big number to the new (wider) layout
+  celResize();   // size the confetti canvas to the (about-to-be fullscreen) screen
 }
 function exitPresent() {
   document.body.classList.remove("present");
   try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {}
   fitTotal();
+  celResize();
 }
 $("presentBtn").addEventListener("click", enterPresent);
 $("exitPresent").addEventListener("click", exitPresent);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.body.classList.contains("present")) exitPresent(); });
-// If they leave fullscreen via the system (Esc), drop present mode too.
+// Fullscreen dimensions settle on this event — re-size canvas + total here too.
 document.addEventListener("fullscreenchange", () => {
   if (!document.fullscreenElement && document.body.classList.contains("present")) exitPresent();
+  celResize();
+  fitTotal();
 });
 
 function celDur(level) {
