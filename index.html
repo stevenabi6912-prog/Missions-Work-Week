@@ -674,7 +674,8 @@ const celEl = $("celebrate");
 const celCv = $("cfx");
 const celCtx = celCv.getContext("2d");
 const CEL_GOLD = ["#d6a93f", "#e6c879", "#f7f2e4", "#ffffff", "#c8902f", "#b8860b"];
-let celParts = [], celRAF = null, celHideT = null, celSpawnT = null, lastCelKey = null;
+let celParts = [], celRAF = null, celHideT = null, celSpawnT = null;
+let lastCelAt = 0, localEchoKey = null, localEchoUntil = 0;
 
 function celResize() { celCv.width = window.innerWidth; celCv.height = window.innerHeight; }
 window.addEventListener("resize", celResize);
@@ -747,6 +748,7 @@ const CEL_COPY = {
 };
 
 function celShow(level, value, remainingMs) {
+  if (celSpawnT) { clearTimeout(celSpawnT); celSpawnT = null; }
   const c = CEL_COPY[level] || CEL_COPY.small;
   $("celIcon").textContent = c.icon;
   $("celHead").textContent = c.head;
@@ -777,17 +779,32 @@ $("test10k").addEventListener("click", () => celShow("small", 10000, 8000));
 $("test150").addEventListener("click", () => celShow("half", 150000, 11000));
 $("test300").addEventListener("click", () => celShow("goal", 300000, 13000));
 
-// Show a celebration broadcast from Firebase — on every device, and for
+function celDur(level) {
+  return level === "goal" ? CELEBRATE.goalMs
+       : level === "half" ? CELEBRATE.halfMs
+       : CELEBRATE.smallMs;
+}
+
+// Show INSTANTLY on the device that triggered the milestone (never depends on
+// the network/broadcast succeeding), and remember it so the broadcast echo
+// coming back from Firebase doesn't replay it on this same device.
+function celShowLocal(level, value) {
+  localEchoKey = level + ":" + value;
+  localEchoUntil = Date.now() + celDur(level);
+  celShow(level, value, celDur(level));
+}
+
+// Show a celebration broadcast from Firebase — on every OTHER device, and for
 // late-joiners still inside the time window.
 function handleCelebrate(c) {
   if (!c || !c.level) return;
-  const key = c.level + ":" + c.value;
-  if (key === lastCelKey) return;           // already handled this milestone
-  lastCelKey = key;
-  const dur = c.level === "goal" ? CELEBRATE.goalMs
-            : c.level === "half" ? CELEBRATE.halfMs
-            : CELEBRATE.smallMs;
   const at = Number(c.at) || 0;
+  const dur = celDur(c.level);
+  const key = c.level + ":" + c.value;
+  // We triggered this one and already showed it locally — ignore the echo.
+  if (key === localEchoKey && Date.now() < localEchoUntil) { if (at > lastCelAt) lastCelAt = at; return; }
+  if (at && at <= lastCelAt) return;         // not newer than the last we handled
+  lastCelAt = at;
   const elapsed = at ? (Date.now() - at) : 0;
   if (elapsed > dur) return;                 // stale (loaded long after) — skip
   celShow(c.level, c.value, dur - Math.max(0, elapsed));
@@ -862,13 +879,15 @@ function writeBoxes(newCount) {
       stateRef.child("days").child(todayKeyET()).set(newCount)
         .catch(() => flash("⚠ Count saved, but daily history is NOT saving — publish the updated database rules (see README).", false));
 
-      // Broadcast a milestone celebration to every device (best-effort).
+      // Milestone! Show it on THIS screen instantly (never depends on the
+      // network), then broadcast it to every other device.
       if (milestone) {
+        celShowLocal(milestone.level, milestone.value);
         stateRef.child("celebrate").set({
           level: milestone.level,
           value: milestone.value,
           at: firebase.database.ServerValue.TIMESTAMP
-        }).catch(() => {});
+        }).catch(() => flash("⚠ Celebration showed here, but did NOT broadcast to other devices — publish the updated rules (celebrate node).", false));
       }
     })
     .catch((e) => flash("Save failed: " + e.message));
