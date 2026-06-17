@@ -581,9 +581,11 @@ const MISSION_START = { year: 2026, month: 6, day: 15, hour: 9, minute: 0 };
 const CELEBRATE = {
   smallEvery: 10000,        // small popup each time this many Scriptures is crossed
   halfAt:     150000,       // "halfway there" celebration
+  m2At:       200000,       // 200k milestone (same style as halfway)
+  m3At:       250000,       // 250k milestone (same style as halfway)
   goalAt:     300000,       // "goal reached" finale
   smallMs:    8 * 1000,        // small popup duration  (8 seconds)
-  halfMs:     5 * 60 * 1000,   // halfway duration      (5 minutes)
+  halfMs:     5 * 60 * 1000,   // halfway / 200k / 250k duration  (5 minutes)
   goalMs:     10 * 60 * 1000   // goal duration         (10 minutes)
 };
 
@@ -1034,6 +1036,8 @@ function celLoop() {
 const CEL_COPY = {
   small: { icon: "🎉", head: "Milestone!",   sub: "Scriptures completed — keep it going!" },
   half:  { icon: "🚩", head: "Halfway there!", sub: "Half the goal reached — keep pressing on!" },
+  m2:    { icon: "🚩", head: "Two-thirds there!", sub: "200,000 reached — keep pressing on!" },
+  m3:    { icon: "🚩", head: "Almost there!", sub: "250,000 reached — so close now!" },
   goal:  { icon: "🏆", head: "Goal reached!",  sub: "Praise God — the goal is complete!" }
 };
 
@@ -1054,7 +1058,7 @@ function celShow(level, value, remainingMs) {
   const cx = celCv.width / 2, cy = celCv.height / 2;
   // Confetti runs for the ENTIRE remaining duration (until the overlay closes).
   if (level === "goal") { celBurstAt(cx, cy, 160); celRainFor(remainingMs, 10); celFireworksFor(remainingMs, 650); }
-  else if (level === "half") { celBurstAt(cx, cy, 110); celRainFor(remainingMs, 8); }
+  else if (level === "half" || level === "m2" || level === "m3") { celBurstAt(cx, cy, 110); celRainFor(remainingMs, 8); }
   else { celBurstAt(cx, cy, 70); celRainFor(remainingMs, 8); }
 
   if (celHideT) clearTimeout(celHideT);
@@ -1123,7 +1127,7 @@ document.addEventListener("fullscreenchange", () => {
 
 function celDur(level) {
   return level === "goal" ? CELEBRATE.goalMs
-       : level === "half" ? CELEBRATE.halfMs
+       : (level === "half" || level === "m2" || level === "m3") ? CELEBRATE.halfMs
        : CELEBRATE.smallMs;
 }
 
@@ -1248,6 +1252,8 @@ function writeBoxes(newCount) {
 function detectMilestone(oldTotal, newTotal) {
   if (newTotal <= oldTotal) return null;
   if (oldTotal < CELEBRATE.goalAt && newTotal >= CELEBRATE.goalAt) return { level: "goal", value: CELEBRATE.goalAt };
+  if (oldTotal < CELEBRATE.m3At && newTotal >= CELEBRATE.m3At) return { level: "m3", value: CELEBRATE.m3At };
+  if (oldTotal < CELEBRATE.m2At && newTotal >= CELEBRATE.m2At) return { level: "m2", value: CELEBRATE.m2At };
   if (oldTotal < CELEBRATE.halfAt && newTotal >= CELEBRATE.halfAt) return { level: "half", value: CELEBRATE.halfAt };
   const oldM = Math.floor(oldTotal / CELEBRATE.smallEvery);
   const newM = Math.floor(newTotal / CELEBRATE.smallEvery);
