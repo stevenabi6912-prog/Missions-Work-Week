@@ -75,12 +75,15 @@
     color:var(--muted); font-weight:700;
   }
   .hero .total{
+    /* Starting (max) size; fitTotal() shrinks this in JS so the number
+       never overflows the card, no matter how many digits it grows to. */
     font-size:clamp(3.6rem, 22vw, 6.5rem);
     line-height:1;
     font-weight:900;
     color:var(--accent);
     margin:8px 0 4px;
     font-variant-numeric:tabular-nums;
+    white-space:nowrap;            /* keep the number on one line so it can be measured/scaled */
     text-shadow:0 4px 26px rgba(214,169,63,.32);
     transition:transform .18s ease;
   }
@@ -450,6 +453,7 @@ const APP_TITLE = "Scriptures Completed";
 // ---- 3b) WEEK GOAL -------------------------------------------
 //   Total Scriptures goal for the week, split evenly across the
 //   working days up to (and including) the GOAL day below.
+const APP_VERSION = "v8";         // shown in the footer so you can confirm a device is up to date
 const TOTAL_GOAL = 300000;        // grand total goal for the week
 //   Day the goal should be hit (0=Sun … 4=Thu … 5=Fri). Days after
 //   this one are shown as "buffer" with no daily goal.
@@ -534,6 +538,7 @@ if (stateRef) {
     state.bookletsPerBox = Number(v.bookletsPerBox) || DEFAULT_BOOKLETS_PER_BOX;
     state.days = v.days || {};
     render();
+    detectFromTotal(state.completedBoxes * state.bookletsPerBox, state.bookletsPerBox);
     handleCelebrate(v.celebrate);
     // keep admin's "per box" field showing the current value when idle
     const pbInput = $("perBoxInput");
@@ -548,11 +553,34 @@ if (stateRef) {
 // ---------- Number formatting ----------
 const fmt = (n) => Number(n).toLocaleString("en-US");
 
+// ---------- Auto-fit the big total to its card ----------
+// The number keeps growing (eventually 7+ digits), so a fixed/clamp font
+// size will overflow. After each update we reset to the CSS max size, then
+// shrink the font just enough that the text fits the card's content width.
+function fitTotal() {
+  const el = totalEl;
+  if (!el) return;
+  const card = el.parentElement;
+  el.style.fontSize = "";                 // back to the CSS-defined max
+  const cs = getComputedStyle(card);
+  const avail = card.clientWidth
+    - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  if (avail <= 0) return;
+  const natural = el.scrollWidth;         // full width (white-space:nowrap)
+  if (natural > avail) {
+    const base = parseFloat(getComputedStyle(el).fontSize);
+    el.style.fontSize = (base * avail / natural) + "px";
+  }
+}
+// Re-fit when the viewport changes (orientation/resize).
+window.addEventListener("resize", fitTotal);
+
 // ---------- Render dashboard ----------
 let lastTotal = null;
 function render() {
   const total = state.completedBoxes * state.bookletsPerBox;
   totalEl.textContent = fmt(total);
+  fitTotal();
   boxEl.textContent   = fmt(state.completedBoxes);
   heroSub.textContent = `${fmt(state.completedBoxes)} boxes × ${fmt(state.bookletsPerBox)} booklets`;
 
@@ -724,7 +752,7 @@ setInterval(() => render(), 60 * 1000);
 // Footer: show the configured mission start.
 $("missionFooter").textContent =
   `Clock starts ${MISSION_START.month}/${MISSION_START.day}/${MISSION_START.year} ` +
-  `${WORK_START_HOUR}:00 ET · counts weekday ${WORK_START_HOUR}:00–${WORK_END_HOUR}:00 ET only`;
+  `${WORK_START_HOUR}:00 ET · counts weekday ${WORK_START_HOUR}:00–${WORK_END_HOUR}:00 ET only · ${APP_VERSION}`;
 
 // ================================================================
 // CELEBRATIONS  (confetti + synced milestone overlay)
@@ -734,7 +762,8 @@ const celCv = $("cfx");
 const celCtx = celCv.getContext("2d");
 const CEL_GOLD = ["#d6a93f", "#e6c879", "#f7f2e4", "#ffffff", "#c8902f", "#b8860b"];
 let celParts = [], celRAF = null, celHideT = null, celRainT = null, celFwT = null;
-let lastCelAt = 0, localEchoKey = null, localEchoUntil = 0, celCurrentLevel = null;
+let celCurrentLevel = null, prevTotal = null, prevPerBox = null;
+const shownKeys = {};   // milestone "level:value" -> expiry ms (dedupe detect + broadcast)
 
 function celResize() { celCv.width = window.innerWidth; celCv.height = window.innerHeight; }
 window.addEventListener("resize", celResize);
@@ -873,29 +902,39 @@ function celDur(level) {
        : CELEBRATE.smallMs;
 }
 
-// Show INSTANTLY on the device that triggered the milestone (never depends on
-// the network/broadcast succeeding), and remember it so the broadcast echo
-// coming back from Firebase doesn't replay it on this same device.
-function celShowLocal(level, value) {
-  localEchoKey = level + ":" + value;
-  localEchoUntil = Date.now() + celDur(level);
-  celShow(level, value, celDur(level));
+// Single entry point for showing a milestone. Dedupes so the same milestone
+// can't double-fire from both the live-count detector and the broadcast.
+function fireCelebration(level, value, remainingMs) {
+  const key = level + ":" + value;
+  const now = Date.now();
+  if (shownKeys[key] && now < shownKeys[key]) return;   // already showing/shown recently
+  shownKeys[key] = now + celDur(level);
+  celShow(level, value, remainingMs);
 }
 
-// Show a celebration broadcast from Firebase — on every OTHER device, and for
-// late-joiners still inside the time window.
+// Broadcast from Firebase — covers late-joiners who open during the window
+// (open devices already catch it via the live-count detector below).
 function handleCelebrate(c) {
   if (!c || !c.level) return;
-  const at = Number(c.at) || 0;
   const dur = celDur(c.level);
-  const key = c.level + ":" + c.value;
-  // We triggered this one and already showed it locally — ignore the echo.
-  if (key === localEchoKey && Date.now() < localEchoUntil) { if (at > lastCelAt) lastCelAt = at; return; }
-  if (at && at <= lastCelAt) return;         // not newer than the last we handled
-  lastCelAt = at;
+  const at = Number(c.at) || 0;
   const elapsed = at ? (Date.now() - at) : 0;
   if (elapsed > dur) return;                 // stale (loaded long after) — skip
-  celShow(c.level, c.value, dur - Math.max(0, elapsed));
+  fireCelebration(c.level, c.value, dur - Math.max(0, elapsed));
+}
+
+// Live-count detector: runs on EVERY device. When the shared total crosses a
+// milestone between updates, celebrate locally — no dependency on the writer's
+// code version or the broadcast succeeding.
+function detectFromTotal(newTotal, perBox) {
+  // Only detect when per-box is unchanged (a per-box edit jumps the total
+  // without real production and shouldn't fire a celebration).
+  if (prevTotal !== null && prevPerBox === perBox && newTotal > prevTotal) {
+    const ms = detectMilestone(prevTotal, newTotal);
+    if (ms) fireCelebration(ms.level, ms.value, celDur(ms.level));
+  }
+  prevTotal = newTotal;
+  prevPerBox = perBox;
 }
 
 // ================================================================
@@ -967,15 +1006,14 @@ function writeBoxes(newCount) {
       stateRef.child("days").child(todayKeyET()).set(newCount)
         .catch(() => flash("⚠ Count saved, but daily history is NOT saving — publish the updated database rules (see README).", false));
 
-      // Milestone! Show it on THIS screen instantly (never depends on the
-      // network), then broadcast it to every other device.
+      // Milestone! Broadcast it so late-joiners (who open during the window)
+      // also see it. Open devices already catch it via the live-count detector.
       if (milestone) {
-        celShowLocal(milestone.level, milestone.value);
         stateRef.child("celebrate").set({
           level: milestone.level,
           value: milestone.value,
           at: firebase.database.ServerValue.TIMESTAMP
-        }).catch(() => flash("⚠ Celebration showed here, but did NOT broadcast to other devices — publish the updated rules (celebrate node).", false));
+        }).catch(() => {});
       }
     })
     .catch((e) => flash("Save failed: " + e.message));
