@@ -1004,12 +1004,24 @@ function celFireworksFor(ms, gap) {
   };
   fire();
 }
-function celRainFor(ms, perTick) {
+// Opening volley: simultaneous bursts from several launch points
+// (center + corners) so confetti fills the screen instantly.
+function celBurstSpread(n) {
+  const W = celCv.width, H = celCv.height;
+  const pts = [[W * 0.5, H * 0.45], [W * 0.16, H * 0.32], [W * 0.84, H * 0.32],
+               [W * 0.26, H * 0.66], [W * 0.74, H * 0.66]];
+  for (const [x, y] of pts) celBurstAt(x, y, n);
+}
+// Periodic re-bursts for the duration — replaces the old snow-like rain
+// with frequent, lively bursts from varied points across the screen.
+function celReburstFor(ms, gap, n) {
   const start = Date.now();
   const tick = () => {
     if (Date.now() - start > ms || !celEl.classList.contains("show")) return;
-    celSpawn(perTick, { rain: true });
-    celRainT = setTimeout(tick, 280);
+    const W = celCv.width, H = celCv.height;
+    celBurstAt(celRand(W * 0.12, W * 0.88), celRand(H * 0.20, H * 0.62), n);
+    celBurstAt(celRand(W * 0.12, W * 0.88), celRand(H * 0.20, H * 0.62), n);
+    celRainT = setTimeout(tick, gap);
   };
   tick();
 }
@@ -1057,9 +1069,9 @@ function celShow(level, value, remainingMs) {
 
   const cx = celCv.width / 2, cy = celCv.height / 2;
   // Confetti runs for the ENTIRE remaining duration (until the overlay closes).
-  if (level === "goal") { celBurstAt(cx, cy, 160); celRainFor(remainingMs, 10); celFireworksFor(remainingMs, 650); }
-  else if (level === "half" || level === "m2" || level === "m3") { celBurstAt(cx, cy, 110); celRainFor(remainingMs, 8); }
-  else { celBurstAt(cx, cy, 70); celRainFor(remainingMs, 8); }
+  if (level === "goal") { celBurstSpread(70); celBurstAt(cx, cy, 160); celFireworksFor(remainingMs, 600); celReburstFor(remainingMs, 1400, 60); }
+  else if (level === "half" || level === "m2" || level === "m3") { celBurstSpread(55); celBurstAt(cx, cy, 110); celReburstFor(remainingMs, 1800, 70); }
+  else { celBurstAt(cx, cy, 90); celReburstFor(remainingMs, 2200, 55); }
 
   if (celHideT) clearTimeout(celHideT);
   celHideT = setTimeout(celHide, Math.max(1500, remainingMs));
