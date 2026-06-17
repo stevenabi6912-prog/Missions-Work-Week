@@ -4,6 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <meta name="theme-color" content="#0b1d3a" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>Scriptures Completed</title>
 
 <style>
@@ -77,8 +80,8 @@
   .hero .total{
     /* Starting (max) size; fitTotal() shrinks this in JS so the number
        never overflows the card, no matter how many digits it grows to. */
-    font-size:clamp(3.6rem, 22vw, 6.5rem);
-    line-height:1;
+    font-size:clamp(2.4rem, 15vw, 4.6rem);
+    line-height:1.04;
     font-weight:900;
     color:var(--accent);
     margin:8px 0 4px;
@@ -127,7 +130,6 @@
     color:var(--muted); font-weight:700; text-align:center; margin-bottom:10px;
   }
   .daily-row{
-    display:flex; align-items:center; justify-content:space-between;
     padding:11px 12px; border-radius:12px; margin-bottom:6px;
     background:rgba(255,255,255,0.03); border:1px solid transparent;
   }
@@ -135,6 +137,11 @@
   .daily-row.today{
     border-color:var(--accent); background:rgba(214,169,63,0.10);
   }
+  .daily-main{display:flex; align-items:center; justify-content:space-between;}
+  .day-bar{margin-top:10px; height:9px; border-radius:6px; background:rgba(255,255,255,.08); overflow:hidden;}
+  .day-bar-fill{height:100%; border-radius:6px; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width .5s ease;}
+  .day-bar-cap{font-size:.7rem; color:var(--muted); margin-top:6px; text-align:right;}
+  .day-bar-cap b{color:var(--accent);}
   .daily-row .day{font-weight:700; font-size:1rem; display:flex; align-items:center; gap:8px;}
   .daily-row .day .goal{font-size:.68rem; color:var(--accent); letter-spacing:.05em;}
   .daily-row .day .live{font-size:.62rem; color:var(--ok); letter-spacing:.08em; text-transform:uppercase;}
@@ -453,7 +460,7 @@ const APP_TITLE = "Scriptures Completed";
 // ---- 3b) WEEK GOAL -------------------------------------------
 //   Total Scriptures goal for the week, split evenly across the
 //   working days up to (and including) the GOAL day below.
-const APP_VERSION = "v8";         // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v9";         // shown in the footer so you can confirm a device is up to date
 const TOTAL_GOAL = 300000;        // grand total goal for the week
 //   Day the goal should be hit (0=Sun … 4=Thu … 5=Fri). Days after
 //   this one are shown as "buffer" with no daily goal.
@@ -563,8 +570,9 @@ function fitTotal() {
   const card = el.parentElement;
   el.style.fontSize = "";                 // back to the CSS-defined max
   const cs = getComputedStyle(card);
+  // leave a few px of breathing room so sub-pixel rounding never clips
   const avail = card.clientWidth
-    - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 6;
   if (avail <= 0) return;
   const natural = el.scrollWidth;         // full width (white-space:nowrap)
   if (natural > avail) {
@@ -734,9 +742,21 @@ function renderDaily() {
       (d.isToday ? `<span class="live">● today</span>` : "") +
       (d.met ? `<span class="met">✓</span>` : "") +
       (d.missed ? `<span class="miss">😞</span>` : "");
+
+    // Progress bar — TODAY ONLY, toward today's individual goal.
+    let bar = "";
+    if (d.isToday && d.dayGoal > 0) {
+      const pct = Math.min(100, Math.round((d.scriptures / d.dayGoal) * 100));
+      bar = `<div class="day-bar"><div class="day-bar-fill" style="width:${pct}%"></div></div>
+             <div class="day-bar-cap"><b>${pct}%</b> of today's ${fmt(d.dayGoal)} goal</div>`;
+    }
+
     return `<div class="daily-row${d.isToday ? " today" : ""}">
-         <div class="day">${d.label}${tags}</div>
-         <div class="val">${fmt(d.scriptures)}<small>${sub}</small></div>
+         <div class="daily-main">
+           <div class="day">${d.label}${tags}</div>
+           <div class="val">${fmt(d.scriptures)}<small>${sub}</small></div>
+         </div>
+         ${bar}
        </div>`;
   }).join("");
 
