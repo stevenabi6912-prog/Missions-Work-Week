@@ -479,6 +479,16 @@
       </div>
     </div>
 
+    <div class="field">
+      <label>Fire celebration on ALL devices (does not change the count)</label>
+      <div class="row">
+        <button class="btn-sm go" id="fire150" style="flex:1;">🚩 150k</button>
+        <button class="btn-sm go" id="fire200" style="flex:1;">🚩 200k</button>
+        <button class="btn-sm go" id="fire250" style="flex:1;">🚩 250k</button>
+        <button class="btn-sm go" id="fireGoal" style="flex:1;">🏆 Goal</button>
+      </div>
+    </div>
+
     <div class="note" id="adminNote"></div>
     <div class="adminbar" style="margin-top:6px;">
       <button class="btn-ghost" id="logoutBtn">Lock & Sign Out</button>
@@ -1113,6 +1123,23 @@ $("sumClose").addEventListener("click", () => $("summary").classList.add("hidden
 $("test10k").addEventListener("click", () => celShow("small", 10000, 8000));
 $("test150").addEventListener("click", () => celShow("half", 150000, 11000));
 $("test300").addEventListener("click", () => celShow("goal", 300000, 13000));
+
+// Manually broadcast a milestone celebration to EVERY device (synced via
+// Firebase, exactly like an automatic milestone). Does NOT touch the count.
+function broadcastCelebration(level, value) {
+  if (!requireReady()) return;                 // needs admin + live connection
+  stateRef.child("celebrate").set({
+    level: level,
+    value: value,
+    at: firebase.database.ServerValue.TIMESTAMP
+  })
+    .then(() => flash("Celebration fired on all devices ✓", true))
+    .catch((e) => flash("Couldn't fire celebration: " + e.message));
+}
+$("fire150").addEventListener("click", () => broadcastCelebration("half", 150000));
+$("fire200").addEventListener("click", () => broadcastCelebration("m2", 200000));
+$("fire250").addEventListener("click", () => broadcastCelebration("m3", 250000));
+$("fireGoal").addEventListener("click", () => broadcastCelebration("goal", 300000));
 
 // ===== PRESENT MODE (projector layout) =====
 function enterPresent() {
