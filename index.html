@@ -901,6 +901,7 @@ function computeDailyRows() {
   let prevCum = 0; // cumulative boxes at the start of each day
   const rows = dates.map((d, i) => {
     const isToday = d.key === todayKey;
+    const startCum = prevCum;   // cumulative boxes at the START of this day
     // Cumulative box count at the END of this day:
     //  - today  -> the LIVE running count (updates as boxes are added)
     //  - a past/future day with a stamp -> that stamp
@@ -914,7 +915,15 @@ function computeDailyRows() {
     prevCum = cum;
 
     const scriptures = boxesToday * state.bookletsPerBox;
-    const dayGoal = i <= goalIdx ? perDayGoal : 0;
+    // Daily goal: the planned even split for every goal day EXCEPT the final
+    // one (Thursday). The final goal day's goal is whatever is still needed to
+    // reach TOTAL_GOAL — so it can't show an impossible 75k once the week is
+    // nearly complete. Based on the cumulative at the START of the day, so it
+    // stays a fixed target through the day.
+    let dayGoal;
+    if (i < goalIdx) dayGoal = perDayGoal;
+    else if (i === goalIdx) dayGoal = Math.max(0, TOTAL_GOAL - startCum * state.bookletsPerBox);
+    else dayGoal = 0;
     const isPast = d.key < todayKey;   // a fully-finished day
     const met = dayGoal > 0 && scriptures >= dayGoal;
     const missed = dayGoal > 0 && isPast && scriptures < dayGoal;
