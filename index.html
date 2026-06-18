@@ -386,6 +386,14 @@
     body.present .daily #dailyList{flex:1;}
   }
 
+  .settings-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .set-lbl{display:flex; flex-direction:column; font-size:.72rem; color:var(--muted); gap:5px;}
+  .set-lbl input{
+    background:rgba(0,0,0,.25); color:var(--text); border:1px solid var(--border);
+    border-radius:10px; padding:11px; font-size:1rem; font-family:inherit;
+  }
+  .set-lbl input:focus{outline:none; border-color:var(--accent);}
+
   .hidden{display:none !important;}
 
   footer{margin-top:30px; text-align:center; font-size:.72rem; color:var(--muted);}
@@ -488,6 +496,22 @@
     </div>
 
     <div class="field">
+      <label>Project settings (shared by all devices)</label>
+      <div class="settings-grid">
+        <label class="set-lbl">Start date<input type="date" id="setStart" /></label>
+        <label class="set-lbl">End date (deadline)<input type="date" id="setEnd" /></label>
+        <label class="set-lbl">Total goal<input type="number" id="setTotal" inputmode="numeric" /></label>
+        <label class="set-lbl">Daily goal<input type="number" id="setDaily" inputmode="numeric" /></label>
+      </div>
+      <button class="btn-sm go" id="saveSettings" style="width:100%; margin-top:10px; padding:13px;">Save project settings</button>
+    </div>
+
+    <div class="field">
+      <label>End-of-project recap</label>
+      <button class="btn-sm" id="showRecap" style="width:100%; padding:13px;">📊 Show week recap (this device)</button>
+    </div>
+
+    <div class="field">
       <label>Preview celebrations (this device only — not broadcast)</label>
       <div class="row">
         <button class="btn-sm" id="test10k" style="flex:1;">🎉 10k</button>
@@ -585,34 +609,39 @@ const ADMIN_PASSWORD = "5898";
 // ---- 3) DEFAULTS ---------------------------------------------
 const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
 const APP_TITLE = "Scriptures Completed";
+const APP_VERSION = "v13";        // shown in the footer so you can confirm a device is up to date
 
-// ---- 3b) WEEK GOAL -------------------------------------------
-//   Total Scriptures goal for the week, split evenly across the
-//   working days up to (and including) the GOAL day below.
-const APP_VERSION = "v12";        // shown in the footer so you can confirm a device is up to date
-const TOTAL_GOAL = 300000;        // grand total goal for the week
-//   Day the goal should be hit (0=Sun … 4=Thu … 5=Fri). Days after
-//   this one are shown as "buffer" with no daily goal.
-const GOAL_DAY_DOW = 4;           // Thursday night
-
-// ---- 4) MISSION START (the "clock") --------------------------
-//   The work-hours clock counts from this exact moment, in Eastern
-//   Time (Michigan). Set it to the MONDAY your mission week begins.
-//   Format: YEAR, MONTH(1-12), DAY, HOUR(24h), MINUTE
-const MISSION_START = { year: 2026, month: 6, day: 15, hour: 9, minute: 0 };
-
-// ---- 4b) CELEBRATIONS ----------------------------------------
-//   Milestone graphics that pop up (synced to every device).
-const CELEBRATE = {
-  smallEvery: 10000,        // small popup each time this many Scriptures is crossed
-  halfAt:     150000,       // "halfway there" celebration
-  m2At:       200000,       // 200k milestone (same style as halfway)
-  m3At:       250000,       // 250k milestone (same style as halfway)
-  goalAt:     300000,       // "goal reached" finale
-  smallMs:    8 * 1000,        // small popup duration  (8 seconds)
-  halfMs:     5 * 60 * 1000,   // halfway / 200k / 250k duration  (5 minutes)
-  goalMs:     10 * 60 * 1000   // goal duration         (10 minutes)
+// ---- 3b) PROJECT SETTINGS (editable live in the Admin panel) -
+//   These are just the DEFAULTS used before anything is saved. Admin
+//   edits are stored in Firebase and shared by every device. Dates are
+//   Eastern Time (Michigan); the hours clock starts 9 AM ET on startDate.
+const PROJECT_DEFAULTS = {
+  startDate: "2026-06-15",   // first work day
+  endDate:   "2026-06-19",   // last day shown + pace/projection deadline
+  totalGoal: 300000,         // grand total Scriptures goal
+  dailyGoal: 75000           // per-work-day goal
 };
+let settings = Object.assign({}, PROJECT_DEFAULTS);
+
+// ---- 4) CELEBRATIONS -----------------------------------------
+//   Milestone graphics (synced to every device). Thresholds are derived
+//   from the total goal in applySettings(), so changing the goal rescales
+//   them automatically (½, ⅔, ⅚, full). Default 300k → 150k/200k/250k/300k.
+const CELEBRATE = {
+  smallEvery: 10000,            // small popup each time this many is crossed
+  halfAt: 150000, m2At: 200000, m3At: 250000, goalAt: 300000,
+  smallMs: 8 * 1000,            // 8 seconds
+  halfMs:  5 * 60 * 1000,       // 5 minutes (half / 200k / 250k)
+  goalMs:  10 * 60 * 1000       // 10 minutes (goal)
+};
+function applySettings() {
+  const g = Number(settings.totalGoal) || PROJECT_DEFAULTS.totalGoal;
+  CELEBRATE.goalAt = g;
+  CELEBRATE.halfAt = Math.round(g * 0.5);
+  CELEBRATE.m2At   = Math.round(g * 2 / 3);
+  CELEBRATE.m3At   = Math.round(g * 5 / 6);
+}
+applySettings();
 
 // ---- 5) WORK WINDOW (rarely needs changing) ------------------
 const WORK_START_HOUR = 9;    // 9 AM
@@ -645,7 +674,7 @@ try {
 }
 
 // Local mirror of the shared state
-let state = { completedBoxes: 0, bookletsPerBox: DEFAULT_BOOKLETS_PER_BOX, days: {} };
+let state = { completedBoxes: 0, bookletsPerBox: DEFAULT_BOOKLETS_PER_BOX, days: {}, hours: {} };
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -675,12 +704,17 @@ if (stateRef) {
     state.completedBoxes = Number(v.completedBoxes) || 0;
     state.bookletsPerBox = Number(v.bookletsPerBox) || DEFAULT_BOOKLETS_PER_BOX;
     state.days = v.days || {};
+    state.hours = v.hours || {};
+    // Shared project settings (fall back to defaults for any missing field).
+    settings = Object.assign({}, PROJECT_DEFAULTS, v.settings || {});
+    applySettings();
     render();
     detectFromTotal(state.completedBoxes * state.bookletsPerBox, state.bookletsPerBox);
     handleCelebrate(v.celebrate);
-    // keep admin's "per box" field showing the current value when idle
+    // keep admin fields showing current values when idle
     const pbInput = $("perBoxInput");
     if (document.activeElement !== pbInput) pbInput.value = state.bookletsPerBox;
+    syncSettingsInputs();
   }, (err) => {
     console.error("Read failed:", err);
     syncText.textContent = "Read error — check database rules";
@@ -747,13 +781,15 @@ function render() {
   heroSub.textContent = `${fmt(state.completedBoxes)} boxes × ${fmt(state.bookletsPerBox)} booklets`;
 
   // overall progress toward the week goal
-  const pct = TOTAL_GOAL > 0 ? Math.min(100, (total / TOTAL_GOAL) * 100) : 0;
+  const goal = Number(settings.totalGoal) || PROJECT_DEFAULTS.totalGoal;
+  const pct = goal > 0 ? Math.min(100, (total / goal) * 100) : 0;
   $("goalFill").style.width = pct.toFixed(1) + "%";
   $("goalPct").innerHTML =
-    `<b>${pct.toFixed(1)}%</b> of ${fmt(TOTAL_GOAL)} goal · ${fmt(Math.max(0, TOTAL_GOAL - total))} to go`;
+    `<b>${pct.toFixed(1)}%</b> of ${fmt(goal)} goal · ${fmt(Math.max(0, goal - total))} to go`;
 
   renderAvgPaceProjection(total);
   renderDaily();
+  renderFooter();
 }
 
 // ================================================================
@@ -834,8 +870,8 @@ function fmtDateTime(d) {
 }
 
 function renderAvgPaceProjection(total) {
-  const start = etDate(MISSION_START.year, MISSION_START.month, MISSION_START.day,
-                       MISSION_START.hour, MISSION_START.minute);
+  const goal = Number(settings.totalGoal) || PROJECT_DEFAULTS.totalGoal;
+  const start = projectStart();
   const now = nowInET();
   const elapsed = workingHoursBetween(start, now);
   const avgPerHour = elapsed > 0 ? total / elapsed : 0;
@@ -846,13 +882,13 @@ function renderAvgPaceProjection(total) {
     : (total > 0 ? "—" : "0");
 
   // On-pace badge: compare actual vs. the straight-line pace needed to hit
-  // TOTAL_GOAL by the deadline.
+  // the total goal by the deadline.
   const paceEl = $("paceBadge");
   const totalHrs = workingHoursBetween(start, goalDeadline());
-  if (total >= TOTAL_GOAL) {
+  if (total >= goal) {
     paceEl.className = "pace done"; paceEl.textContent = "🎉 Goal reached!";
   } else if (totalHrs > 0) {
-    const expected = TOTAL_GOAL * Math.min(1, elapsed / totalHrs);
+    const expected = goal * Math.min(1, elapsed / totalHrs);
     const diff = Math.round(total - expected);
     if (diff >= 0) { paceEl.className = "pace ahead";  paceEl.textContent = "● On pace — ahead by " + fmt(diff); }
     else           { paceEl.className = "pace behind"; paceEl.textContent = "● Behind by " + fmt(-diff); }
@@ -862,11 +898,11 @@ function renderAvgPaceProjection(total) {
 
   // Projected finish at current pace
   const projEl = $("projFinish");
-  if (total >= TOTAL_GOAL) {
-    projEl.innerHTML = "<b>" + fmt(TOTAL_GOAL) + " complete</b> 🙌";
+  if (total >= goal) {
+    projEl.innerHTML = "<b>" + fmt(goal) + " complete</b> 🙌";
   } else if (avgPerHour > 0) {
-    const finish = addWorkingHours(now, (TOTAL_GOAL - total) / avgPerHour);
-    projEl.innerHTML = "At this pace, <b>" + fmt(TOTAL_GOAL) + " by " + fmtDateTime(finish) + "</b>";
+    const finish = addWorkingHours(now, (goal - total) / avgPerHour);
+    projEl.innerHTML = "At this pace, <b>" + fmt(goal) + " by " + fmtDateTime(finish) + "</b>";
   } else {
     projEl.textContent = "Projected finish: —";
   }
@@ -885,19 +921,30 @@ function todayKeyET() {
   }).format(new Date());
 }
 
-// The 5 weekday dates of the mission week, starting at MISSION_START.
+// The project's start moment (ET wall clock) — clock starts at 9 AM on startDate.
+function projectStart() {
+  const p = (settings.startDate || PROJECT_DEFAULTS.startDate).split("-").map(Number);
+  return etDate(p[0], p[1], p[2], WORK_START_HOUR, 0);
+}
+
+// Every calendar day from startDate to endDate. The last day is the deadline.
 function missionWeekDates() {
   const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const base = etDate(MISSION_START.year, MISSION_START.month, MISSION_START.day, 0, 0);
+  const s = (settings.startDate || PROJECT_DEFAULTS.startDate).split("-").map(Number);
+  const e = (settings.endDate || PROJECT_DEFAULTS.endDate).split("-").map(Number);
+  const start = new Date(s[0], s[1] - 1, s[2]);
+  const end   = new Date(e[0], e[1] - 1, e[2]);
   const out = [];
-  for (let i = 0; i < 5; i++) {
-    const d = new Date(base);
-    d.setDate(base.getDate() + i);
+  const d = new Date(start);
+  for (let guard = 0; d <= end && guard < 90; guard++) {
+    const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
     out.push({
-      key: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+      key,
       label: `${names[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`,
-      isGoal: d.getDay() === GOAL_DAY_DOW
+      isWorkDay: WORK_DAYS.includes(d.getDay()),
+      isGoal: d.getTime() === end.getTime()   // last day = deadline
     });
+    d.setDate(d.getDate() + 1);
   }
   return out;
 }
@@ -907,16 +954,11 @@ function computeDailyRows() {
   const dates = missionWeekDates();
   const days = state.days || {};
   const todayKey = todayKeyET();
-
-  // Per-day goal: split TOTAL_GOAL across the days up to the goal day.
-  const goalIdx = dates.findIndex((d) => d.isGoal);
-  const goalDays = goalIdx >= 0 ? goalIdx + 1 : dates.length;
-  const perDayGoal = Math.round(TOTAL_GOAL / goalDays);
+  const perDayGoal = Number(settings.dailyGoal) || PROJECT_DEFAULTS.dailyGoal;
 
   let prevCum = 0; // cumulative boxes at the start of each day
-  const rows = dates.map((d, i) => {
+  const rows = dates.map((d) => {
     const isToday = d.key === todayKey;
-    const startCum = prevCum;   // cumulative boxes at the START of this day
     // Cumulative box count at the END of this day:
     //  - today  -> the LIVE running count (updates as boxes are added)
     //  - a past/future day with a stamp -> that stamp
@@ -930,15 +972,7 @@ function computeDailyRows() {
     prevCum = cum;
 
     const scriptures = boxesToday * state.bookletsPerBox;
-    // Daily goal: the planned even split for every goal day EXCEPT the final
-    // one (Thursday). The final goal day's goal is whatever is still needed to
-    // reach TOTAL_GOAL — so it can't show an impossible 75k once the week is
-    // nearly complete. Based on the cumulative at the START of the day, so it
-    // stays a fixed target through the day.
-    let dayGoal;
-    if (i < goalIdx) dayGoal = perDayGoal;
-    else if (i === goalIdx) dayGoal = Math.max(0, TOTAL_GOAL - startCum * state.bookletsPerBox);
-    else dayGoal = 0;
+    const dayGoal = d.isWorkDay ? perDayGoal : 0;   // weekends/non-work days: no goal
     const isPast = d.key < todayKey;   // a fully-finished day
     const met = dayGoal > 0 && scriptures >= dayGoal;
     const missed = dayGoal > 0 && isPast && scriptures < dayGoal;
@@ -946,7 +980,69 @@ function computeDailyRows() {
     return Object.assign({}, d, { scriptures, boxes: boxesToday, dayGoal, isToday, isPast, met, missed });
   });
 
-  return { rows, perDayGoal, goalDays };
+  return { rows, perDayGoal };
+}
+
+// ----- Per-hour data -----
+// Hour key in Eastern Time, as YYYY-MM-DD-HH (24h).
+function hourKeyET() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", hour12: false
+  }).formatToParts(new Date());
+  const o = {}; parts.forEach((p) => (o[p.type] = p.value));
+  const hh = (o.hour === "24" ? "00" : o.hour);
+  return `${o.year}-${o.month}-${o.day}-${hh}`;
+}
+
+function hourLabelParts(y, m, d, h) {
+  const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dt = new Date(y, m - 1, d, h);
+  let hh = h % 12; if (hh === 0) hh = 12;
+  return `${names[dt.getDay()]} ${hh}${h >= 12 ? "PM" : "AM"}`;
+}
+function hourIndex(key) {
+  const p = key.split("-").map(Number);
+  return Math.round(new Date(p[0], p[1] - 1, p[2], p[3], 0, 0).getTime() / 3600000);
+}
+function fmtHourLabel(key) {
+  const p = key.split("-").map(Number);
+  return hourLabelParts(p[0], p[1], p[2], p[3]);
+}
+function fmtHourRange(idx, n) {
+  const s = new Date(idx * 3600000), e = new Date((idx + n) * 3600000);
+  const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const hl = (dt) => { let h = dt.getHours() % 12; if (h === 0) h = 12; return h + (dt.getHours() >= 12 ? "PM" : "AM"); };
+  return `${names[s.getDay()]} ${hl(s)}–${hl(e)}`;
+}
+
+// Fastest single hour + best 3 consecutive clock hours, from the hourly stamps.
+function computeHourStats() {
+  const hrs = state.hours || {};
+  const keys = Object.keys(hrs).sort();
+  if (!keys.length) return null;
+
+  const byIdx = {};
+  let prev = 0, fastest = null;
+  for (const k of keys) {
+    const cum = Number(hrs[k]);
+    const boxes = Math.max(0, cum - prev);
+    prev = cum;
+    const scr = boxes * state.bookletsPerBox;
+    byIdx[hourIndex(k)] = scr;
+    if (!fastest || scr > fastest.scriptures) fastest = { scriptures: scr, label: fmtHourLabel(k) };
+  }
+
+  let best3 = { scriptures: 0, idx: null };
+  for (const idxStr of Object.keys(byIdx)) {
+    const i = Number(idxStr);
+    const sum = (byIdx[i] || 0) + (byIdx[i + 1] || 0) + (byIdx[i + 2] || 0);
+    if (sum > best3.scriptures) best3 = { scriptures: sum, idx: i };
+  }
+  return {
+    fastest,
+    best3: { scriptures: best3.scriptures, label: best3.idx != null ? fmtHourRange(best3.idx, 3) : "—" }
+  };
 }
 
 function renderDaily() {
@@ -980,17 +1076,22 @@ function renderDaily() {
 
   $("dailyList").innerHTML = html;
   $("dailyFoot").textContent =
-    `Daily goal ${fmt(perDayGoal)} Scriptures · ${fmt(TOTAL_GOAL)} total by Thursday night`;
+    `Daily goal ${fmt(perDayGoal)} Scriptures · ${fmt(settings.totalGoal)} total goal`;
 }
 
 // Recompute the average once a minute so it keeps moving even when
 // the count is unchanged.
 setInterval(() => render(), 60 * 1000);
 
-// Footer: show the configured mission start.
-$("missionFooter").textContent =
-  `Clock starts ${MISSION_START.month}/${MISSION_START.day}/${MISSION_START.year} ` +
-  `${WORK_START_HOUR}:00 ET · counts weekday ${WORK_START_HOUR}:00–${WORK_END_HOUR}:00 ET only · ${APP_VERSION}`;
+// Footer: show the configured project window (updates when settings change).
+function renderFooter() {
+  const s = (settings.startDate || "").split("-"); // YYYY-MM-DD
+  const e = (settings.endDate || "").split("-");
+  const sLbl = s.length === 3 ? `${Number(s[1])}/${Number(s[2])}` : "?";
+  const eLbl = e.length === 3 ? `${Number(e[1])}/${Number(e[2])}` : "?";
+  $("missionFooter").textContent =
+    `${sLbl}–${eLbl} · counts weekday ${WORK_START_HOUR}:00–${WORK_END_HOUR}:00 ET · ${APP_VERSION}`;
+}
 
 // ================================================================
 // CELEBRATIONS  (confetti + synced milestone overlay)
@@ -1142,10 +1243,11 @@ function showWeekSummary() {
   const peakDayPace = bestDay ? Math.round(bestDay.scriptures / hoursPerDay) : 0;
 
   // Overall average per working hour elapsed (same basis as the dashboard stat).
-  const start = etDate(MISSION_START.year, MISSION_START.month, MISSION_START.day,
-                       MISSION_START.hour, MISSION_START.minute);
-  const elapsed = workingHoursBetween(start, nowInET());
+  const elapsed = workingHoursBetween(projectStart(), nowInET());
   const avgPerHour = elapsed > 0 ? Math.round(total / elapsed) : 0;
+
+  // Per-hour highlights from the stored hourly data.
+  const hourStats = computeHourStats();
 
   // Most a single day beat its goal by, and the longest run of goal-met days.
   const mostOver = goalRows.filter((r) => r.met)
@@ -1166,6 +1268,10 @@ function showWeekSummary() {
   facts.push({ i: "💥", v: "+" + fmt(mostOver), l: "Most over a daily goal" });
   facts.push({ i: "🔁", v: longestStreak + (longestStreak === 1 ? " day" : " days"), l: "Longest goal streak" });
   facts.push({ i: "⏱️", v: fmt(avgPerHour) + " /hr", l: "Average per hour" });
+  if (hourStats && hourStats.fastest) {
+    facts.push({ i: "🚀", v: fmt(hourStats.fastest.scriptures), l: "Fastest hour · " + hourStats.fastest.label });
+    facts.push({ i: "📈", v: fmt(hourStats.best3.scriptures), l: "Best 3-hr · " + hourStats.best3.label });
+  }
   facts.push({ i: "🎯", v: hit + "/" + goalRows.length, l: "Days on goal" });
 
   $("sumFacts").innerHTML = facts.map((f) =>
@@ -1198,10 +1304,38 @@ function broadcastCelebration(level, value) {
     .then(() => flash("Celebration fired on all devices ✓", true))
     .catch((e) => flash("Couldn't fire celebration: " + e.message));
 }
-$("fire150").addEventListener("click", () => broadcastCelebration("half", 150000));
-$("fire200").addEventListener("click", () => broadcastCelebration("m2", 200000));
-$("fire250").addEventListener("click", () => broadcastCelebration("m3", 250000));
-$("fireGoal").addEventListener("click", () => broadcastCelebration("goal", 300000));
+// Fire buttons use the live (rescaled) thresholds so they match the total goal.
+$("fire150").addEventListener("click", () => broadcastCelebration("half", CELEBRATE.halfAt));
+$("fire200").addEventListener("click", () => broadcastCelebration("m2", CELEBRATE.m2At));
+$("fire250").addEventListener("click", () => broadcastCelebration("m3", CELEBRATE.m3At));
+$("fireGoal").addEventListener("click", () => broadcastCelebration("goal", CELEBRATE.goalAt));
+
+// ===== SHOW RECAP (on demand) =====
+$("showRecap").addEventListener("click", showWeekSummary);
+
+// ===== PROJECT SETTINGS =====
+// Fill the inputs from the shared settings (skip a field while it's focused).
+function syncSettingsInputs() {
+  const map = { setStart: "startDate", setEnd: "endDate", setTotal: "totalGoal", setDaily: "dailyGoal" };
+  for (const id in map) {
+    const el = $(id);
+    if (el && document.activeElement !== el) el.value = settings[map[id]];
+  }
+}
+$("saveSettings").addEventListener("click", () => {
+  if (!requireReady()) return;
+  const start = $("setStart").value;
+  const end   = $("setEnd").value;
+  const total = parseInt($("setTotal").value, 10);
+  const daily = parseInt($("setDaily").value, 10);
+  if (!start || !end) { flash("Pick a start and end date."); return; }
+  if (end < start)    { flash("End date can't be before start date."); return; }
+  if (isNaN(total) || total < 1) { flash("Total goal must be 1 or more."); return; }
+  if (isNaN(daily) || daily < 1) { flash("Daily goal must be 1 or more."); return; }
+  stateRef.child("settings").set({ startDate: start, endDate: end, totalGoal: total, dailyGoal: daily })
+    .then(() => flash("Project settings saved ✓ — synced to all devices.", true))
+    .catch((e) => flash("Save failed: " + e.message));
+});
 
 // ===== PRESENT MODE (projector layout) =====
 function enterPresent() {
@@ -1335,6 +1469,9 @@ function writeBoxes(newCount) {
       // but we WARN so the daily history isn't silently lost.
       stateRef.child("days").child(todayKeyET()).set(newCount)
         .catch(() => flash("⚠ Count saved, but daily history is NOT saving — publish the updated database rules (see README).", false));
+
+      // Stamp this hour's cumulative count too (for the end-of-project hour stats).
+      stateRef.child("hours").child(hourKeyET()).set(newCount).catch(() => {});
 
       // Milestone! Broadcast it so late-joiners (who open during the window)
       // also see it. Open devices already catch it via the live-count detector.
