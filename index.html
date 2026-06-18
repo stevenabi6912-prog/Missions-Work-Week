@@ -271,10 +271,13 @@
     line-height:1; font-variant-numeric:tabular-nums; text-shadow:0 4px 26px rgba(214,169,63,.35);
   }
   .summary-label{font-size:.78rem; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-top:6px;}
-  .summary-stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:22px 0;}
-  .summary-stats > div{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 6px;}
-  .summary-stats .sv{font-size:1.5rem; font-weight:800; color:var(--accent2); font-variant-numeric:tabular-nums;}
-  .summary-stats .sc{font-size:.64rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-top:4px;}
+  .summary-sub{font-size:.9rem; color:var(--muted); margin-top:4px;}
+  .summary-facts-title{font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--accent2); font-weight:700; margin:24px 0 10px;}
+  .summary-facts{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:22px;}
+  .summary-facts .fact{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 8px 12px;}
+  .summary-facts .fi{font-size:1.5rem; line-height:1;}
+  .summary-facts .fv{font-size:1.45rem; font-weight:800; color:var(--accent2); font-variant-numeric:tabular-nums; margin-top:6px;}
+  .summary-facts .fl{font-size:.62rem; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); margin-top:4px; line-height:1.3;}
   .summary-daily{text-align:left; background:var(--card); border:1px solid var(--border); border-radius:16px; padding:6px 14px; margin-bottom:20px;}
   .sum-row{display:flex; justify-content:space-between; align-items:center; padding:11px 2px; border-bottom:1px solid rgba(255,255,255,.07); font-size:1rem;}
   .sum-row:last-child{border-bottom:none;}
@@ -347,6 +350,20 @@
   body.present .day-bar{height:clamp(8px,1.1vh,18px);}
   body.present .day-bar-cap{font-size:clamp(.8rem,1.1vw,1.5rem);}
   body.present .daily-foot{font-size:clamp(.8rem,1.1vw,1.6rem);}
+
+  /* Week summary scaled up for the projector / TV. */
+  body.present .summary-inner{max-width:min(92vw,1200px);}
+  body.present .summary-badge{font-size:clamp(60px,7vw,130px);}
+  body.present .summary-inner h2{font-size:clamp(1.5rem,3vw,3.4rem);}
+  body.present .summary-total{font-size:clamp(3.5rem,11vw,9rem);}
+  body.present .summary-label{font-size:clamp(.9rem,1.4vw,1.8rem);}
+  body.present .summary-sub{font-size:clamp(1rem,1.5vw,2rem);}
+  body.present .summary-facts-title{font-size:clamp(.9rem,1.4vw,1.8rem);}
+  body.present .summary-facts{grid-template-columns:repeat(3,1fr); gap:clamp(12px,1.4vw,26px);}
+  body.present .summary-facts .fi{font-size:clamp(1.8rem,3vw,3.6rem);}
+  body.present .summary-facts .fv{font-size:clamp(1.7rem,2.8vw,3.6rem);}
+  body.present .summary-facts .fl{font-size:clamp(.7rem,1vw,1.4rem);}
+  body.present .sum-row{font-size:clamp(1rem,1.6vw,2.1rem);}
 
   /* Landscape TVs / monitors: two columns that fill the full width & height,
      so the hero, stats and daily breakdown reach close to every edge. */
@@ -524,11 +541,9 @@
     <h2>Goal reached — week complete!</h2>
     <div class="summary-total" id="sumTotal">—</div>
     <div class="summary-label">Total Scriptures Completed</div>
-    <div class="summary-stats">
-      <div><div class="sv" id="sumBoxes">—</div><div class="sc">Boxes</div></div>
-      <div><div class="sv" id="sumAvg">—</div><div class="sc">Avg / Hour</div></div>
-      <div><div class="sv" id="sumDaysHit">—</div><div class="sc">Days on goal</div></div>
-    </div>
+    <div class="summary-sub" id="sumSub">&nbsp;</div>
+    <div class="summary-facts-title">✨ Fun facts from the week</div>
+    <div class="summary-facts" id="sumFacts"></div>
     <div class="summary-daily" id="sumDaily"></div>
     <button class="summary-close" id="sumClose">Back to dashboard</button>
   </div>
@@ -1115,9 +1130,47 @@ function showWeekSummary() {
   const hit = goalRows.filter((r) => r.met).length;
 
   $("sumTotal").textContent = fmt(total);
-  $("sumBoxes").textContent = fmt(state.completedBoxes);
-  $("sumAvg").textContent = $("perHour").textContent;          // current average/hour
-  $("sumDaysHit").textContent = hit + "/" + goalRows.length;
+  $("sumSub").textContent =
+    `${fmt(state.completedBoxes)} boxes · ${fmt(state.bookletsPerBox)} booklets each`;
+
+  // ----- Fun facts (year-in-review style) from the per-day data -----
+  const prod = rows.filter((r) => r.scriptures > 0);
+  const bestDay = prod.length
+    ? prod.reduce((a, b) => (b.scriptures > a.scriptures ? b : a))
+    : null;
+  const hoursPerDay = WORK_END_HOUR - WORK_START_HOUR;          // working hours in a day
+  const peakDayPace = bestDay ? Math.round(bestDay.scriptures / hoursPerDay) : 0;
+
+  // Overall average per working hour elapsed (same basis as the dashboard stat).
+  const start = etDate(MISSION_START.year, MISSION_START.month, MISSION_START.day,
+                       MISSION_START.hour, MISSION_START.minute);
+  const elapsed = workingHoursBetween(start, nowInET());
+  const avgPerHour = elapsed > 0 ? Math.round(total / elapsed) : 0;
+
+  // Most a single day beat its goal by, and the longest run of goal-met days.
+  const mostOver = goalRows.filter((r) => r.met)
+    .reduce((m, r) => Math.max(m, r.scriptures - r.dayGoal), 0);
+  let streak = 0, longestStreak = 0;
+  for (const r of rows) {
+    if (r.dayGoal > 0) {
+      if (r.met) { streak++; longestStreak = Math.max(longestStreak, streak); }
+      else streak = 0;
+    }
+  }
+
+  const facts = [];
+  if (bestDay) {
+    facts.push({ i: "🔥", v: fmt(bestDay.scriptures), l: `Best day · ${bestDay.label.split(" ")[0]}` });
+    facts.push({ i: "⚡", v: fmt(peakDayPace) + " /hr", l: "Best day's pace" });
+  }
+  facts.push({ i: "💥", v: "+" + fmt(mostOver), l: "Most over a daily goal" });
+  facts.push({ i: "🔁", v: longestStreak + (longestStreak === 1 ? " day" : " days"), l: "Longest goal streak" });
+  facts.push({ i: "⏱️", v: fmt(avgPerHour) + " /hr", l: "Average per hour" });
+  facts.push({ i: "🎯", v: hit + "/" + goalRows.length, l: "Days on goal" });
+
+  $("sumFacts").innerHTML = facts.map((f) =>
+    `<div class="fact"><div class="fi">${f.i}</div><div class="fv">${f.v}</div><div class="fl">${f.l}</div></div>`
+  ).join("");
 
   $("sumDaily").innerHTML = rows.map((d) => {
     const mark = d.met ? '<span class="met">✓</span>' : (d.missed ? " 😞" : "");
