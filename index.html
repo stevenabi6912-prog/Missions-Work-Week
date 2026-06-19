@@ -393,6 +393,16 @@
     border-radius:10px; padding:11px; font-size:1rem; font-family:inherit;
   }
   .set-lbl input:focus{outline:none; border-color:var(--accent);}
+  .wh-label{font-size:.72rem; color:var(--muted); margin:14px 0 6px;}
+  .hours-editor{display:flex; flex-direction:column; gap:6px;}
+  .wh-row{display:flex; align-items:center; gap:8px;}
+  .wh-row .wh-day{width:38px; font-size:.85rem; color:var(--text); font-weight:700;}
+  .wh-row input{
+    flex:1; min-width:0; background:rgba(0,0,0,.25); color:var(--text);
+    border:1px solid var(--border); border-radius:10px; padding:9px; font-size:.95rem; font-family:inherit;
+  }
+  .wh-row input:focus{outline:none; border-color:var(--accent);}
+  .wh-row .wh-dash{color:var(--muted);}
 
   .hidden{display:none !important;}
 
@@ -503,7 +513,9 @@
         <label class="set-lbl">Total goal<input type="number" id="setTotal" inputmode="numeric" /></label>
         <label class="set-lbl">Daily goal<input type="number" id="setDaily" inputmode="numeric" /></label>
       </div>
-      <button class="btn-sm go" id="saveSettings" style="width:100%; margin-top:10px; padding:13px;">Save project settings</button>
+      <div class="wh-label">Working hours per day (leave blank = day off)</div>
+      <div id="hoursEditor" class="hours-editor"></div>
+      <button class="btn-sm go" id="saveSettings" style="width:100%; margin-top:12px; padding:13px;">Save project settings</button>
     </div>
 
     <div class="field">
@@ -511,24 +523,6 @@
       <button class="btn-sm" id="showRecap" style="width:100%; padding:13px;">📊 Show week recap (this device)</button>
     </div>
 
-    <div class="field">
-      <label>Preview celebrations (this device only — not broadcast)</label>
-      <div class="row">
-        <button class="btn-sm" id="test10k" style="flex:1;">🎉 10k</button>
-        <button class="btn-sm" id="test150" style="flex:1;">🚩 Halfway</button>
-        <button class="btn-sm go" id="test300" style="flex:1;">🏆 Goal</button>
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Fire celebration on ALL devices (does not change the count)</label>
-      <div class="row">
-        <button class="btn-sm go" id="fire150" style="flex:1;">🚩 150k</button>
-        <button class="btn-sm go" id="fire200" style="flex:1;">🚩 200k</button>
-        <button class="btn-sm go" id="fire250" style="flex:1;">🚩 250k</button>
-        <button class="btn-sm go" id="fireGoal" style="flex:1;">🏆 Goal</button>
-      </div>
-    </div>
 
     <div class="note" id="adminNote"></div>
     <div class="adminbar" style="margin-top:6px;">
@@ -609,7 +603,7 @@ const ADMIN_PASSWORD = "5898";
 // ---- 3) DEFAULTS ---------------------------------------------
 const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
 const APP_TITLE = "Scriptures Completed";
-const APP_VERSION = "v13";        // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v14";        // shown in the footer so you can confirm a device is up to date
 
 // ---- 3b) PROJECT SETTINGS (editable live in the Admin panel) -
 //   These are just the DEFAULTS used before anything is saved. Admin
@@ -619,7 +613,16 @@ const PROJECT_DEFAULTS = {
   startDate: "2026-06-15",   // first work day
   endDate:   "2026-06-19",   // last day shown + pace/projection deadline
   totalGoal: 300000,         // grand total Scriptures goal
-  dailyGoal: 75000           // per-work-day goal
+  dailyGoal: 75000,          // per-work-day goal
+  // Working hours per day-of-week (0=Sun … 6=Sat). A day not listed is OFF.
+  // Times are "HH:MM" Eastern. Default: Mon–Fri 9:00 AM–8:00 PM.
+  workHours: {
+    "1": { start: "09:00", end: "20:00" },
+    "2": { start: "09:00", end: "20:00" },
+    "3": { start: "09:00", end: "20:00" },
+    "4": { start: "09:00", end: "20:00" },
+    "5": { start: "09:00", end: "20:00" }
+  }
 };
 let settings = Object.assign({}, PROJECT_DEFAULTS);
 
@@ -643,11 +646,9 @@ function applySettings() {
 }
 applySettings();
 
-// ---- 5) WORK WINDOW (rarely needs changing) ------------------
-const WORK_START_HOUR = 9;    // 9 AM
-const WORK_END_HOUR   = 20;   // 8 PM
-//   Working days: Monday(1) … Friday(5)
-const WORK_DAYS = [1, 2, 3, 4, 5];
+// ---- 5) TIME ZONE --------------------------------------------
+//   Working hours are now set per-day in the Admin panel (see workHours
+//   above). All times are interpreted in this zone.
 const TIME_ZONE = "America/New_York";
 
 /* ================================================================
@@ -807,58 +808,74 @@ function etDate(y, m, d, h, min) {
   return new Date(y, m - 1, d, h, min, 0, 0);
 }
 
-// Sum the number of WORKING hours between two ET datetimes,
-// counting only weekday WORK_START_HOUR..WORK_END_HOUR windows.
+// Parse "HH:MM" → minutes from midnight.
+function parseHM(s) { const p = String(s).split(":"); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }
+
+// The work window for a given date (ET wall clock), per the configured
+// per-day hours. Returns {start, end} Dates, or null if that day is off.
+function dayWindowFor(d) {
+  const wh = settings.workHours || PROJECT_DEFAULTS.workHours;
+  const w = wh[String(d.getDay())];
+  if (!w || !w.start || !w.end) return null;
+  const sM = parseHM(w.start), eM = parseHM(w.end);
+  if (eM <= sM) return null;
+  const start = new Date(d); start.setHours(Math.floor(sM / 60), sM % 60, 0, 0);
+  const end   = new Date(d); end.setHours(Math.floor(eM / 60), eM % 60, 0, 0);
+  return { start, end };
+}
+
+// Length (hours) of a date's work window, 0 if off.
+function dayWindowHours(d) {
+  const w = dayWindowFor(d);
+  return w ? (w.end - w.start) / 3600000 : 0;
+}
+
+// Sum the WORKING hours between two ET datetimes, per each day's window.
 function workingHoursBetween(start, end) {
   if (end <= start) return 0;
   let total = 0;
-
-  // Walk day by day from the start date through the end date.
   const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   const lastDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-
   while (cur <= lastDay) {
-    const dow = cur.getDay(); // 0=Sun … 6=Sat
-    if (WORK_DAYS.includes(dow)) {
-      const winStart = new Date(cur); winStart.setHours(WORK_START_HOUR, 0, 0, 0);
-      const winEnd   = new Date(cur); winEnd.setHours(WORK_END_HOUR, 0, 0, 0);
-      // overlap of [start,end] with this day's [winStart,winEnd]
-      const a = Math.max(start.getTime(), winStart.getTime());
-      const b = Math.min(end.getTime(),   winEnd.getTime());
-      if (b > a) total += (b - a) / 3600000; // ms → hours
+    const w = dayWindowFor(cur);
+    if (w) {
+      const a = Math.max(start.getTime(), w.start.getTime());
+      const b = Math.min(end.getTime(),   w.end.getTime());
+      if (b > a) total += (b - a) / 3600000;
     }
     cur.setDate(cur.getDate() + 1);
   }
   return total;
 }
 
-// The goal deadline: the goal day (Thursday) at the end of the work window.
+// The goal deadline: the end of the last day's work window.
 function goalDeadline() {
   const dates = missionWeekDates();
   const g = dates.find((d) => d.isGoal) || dates[dates.length - 1];
   const p = g.key.split("-").map(Number);
-  return etDate(p[0], p[1], p[2], WORK_END_HOUR, 0);
+  const d = new Date(p[0], p[1] - 1, p[2]);
+  const w = dayWindowFor(d);
+  return w ? w.end : etDate(p[0], p[1], p[2], 20, 0);
 }
 
-// Add N working hours to a start time, skipping nights/weekends — used to
+// Add N working hours to a start time, skipping nights/off-days — used to
 // project when the goal will be reached at the current pace.
 function addWorkingHours(start, hoursToAdd) {
   if (hoursToAdd <= 0) return new Date(start);
   let remaining = hoursToAdd * 3600000;
   let cur = new Date(start);
   for (let guard = 0; guard < 400 && remaining > 0; guard++) {
-    if (WORK_DAYS.includes(cur.getDay())) {
-      const winStart = new Date(cur); winStart.setHours(WORK_START_HOUR, 0, 0, 0);
-      const winEnd   = new Date(cur); winEnd.setHours(WORK_END_HOUR, 0, 0, 0);
-      const segStart = cur < winStart ? winStart : cur;
-      if (segStart < winEnd) {
-        const avail = winEnd - segStart;
+    const w = dayWindowFor(cur);
+    if (w) {
+      const segStart = cur < w.start ? w.start : cur;
+      if (segStart < w.end) {
+        const avail = w.end - segStart;
         if (remaining <= avail) return new Date(segStart.getTime() + remaining);
         remaining -= avail;
       }
     }
     cur.setDate(cur.getDate() + 1);
-    cur.setHours(WORK_START_HOUR, 0, 0, 0);
+    cur.setHours(0, 0, 0, 0);
   }
   return cur;
 }
@@ -921,10 +938,11 @@ function todayKeyET() {
   }).format(new Date());
 }
 
-// The project's start moment (ET wall clock) — clock starts at 9 AM on startDate.
+// The project's start moment (ET wall clock) — the start of startDate's window.
 function projectStart() {
   const p = (settings.startDate || PROJECT_DEFAULTS.startDate).split("-").map(Number);
-  return etDate(p[0], p[1], p[2], WORK_START_HOUR, 0);
+  const w = dayWindowFor(new Date(p[0], p[1] - 1, p[2]));
+  return w ? w.start : etDate(p[0], p[1], p[2], 9, 0);
 }
 
 // Every calendar day from startDate to endDate. The last day is the deadline.
@@ -941,7 +959,7 @@ function missionWeekDates() {
     out.push({
       key,
       label: `${names[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`,
-      isWorkDay: WORK_DAYS.includes(d.getDay()),
+      isWorkDay: !!dayWindowFor(d),
       isGoal: d.getTime() === end.getTime()   // last day = deadline
     });
     d.setDate(d.getDate() + 1);
@@ -1090,7 +1108,7 @@ function renderFooter() {
   const sLbl = s.length === 3 ? `${Number(s[1])}/${Number(s[2])}` : "?";
   const eLbl = e.length === 3 ? `${Number(e[1])}/${Number(e[2])}` : "?";
   $("missionFooter").textContent =
-    `${sLbl}–${eLbl} · counts weekday ${WORK_START_HOUR}:00–${WORK_END_HOUR}:00 ET · ${APP_VERSION}`;
+    `${sLbl}–${eLbl} · per-day working hours (ET) · ${APP_VERSION}`;
 }
 
 // ================================================================
@@ -1239,8 +1257,12 @@ function showWeekSummary() {
   const bestDay = prod.length
     ? prod.reduce((a, b) => (b.scriptures > a.scriptures ? b : a))
     : null;
-  const hoursPerDay = WORK_END_HOUR - WORK_START_HOUR;          // working hours in a day
-  const peakDayPace = bestDay ? Math.round(bestDay.scriptures / hoursPerDay) : 0;
+  let peakDayPace = 0;
+  if (bestDay) {
+    const bp = bestDay.key.split("-").map(Number);
+    const hrs = dayWindowHours(new Date(bp[0], bp[1] - 1, bp[2])) || 1;
+    peakDayPace = Math.round(bestDay.scriptures / hrs);
+  }
 
   // Overall average per working hour elapsed (same basis as the dashboard stat).
   const elapsed = workingHoursBetween(projectStart(), nowInET());
@@ -1287,39 +1309,37 @@ function showWeekSummary() {
 }
 $("sumClose").addEventListener("click", () => $("summary").classList.add("hidden"));
 
-// Admin-only local previews (short auto-close; do NOT broadcast to others).
-$("test10k").addEventListener("click", () => celShow("small", 10000, 8000));
-$("test150").addEventListener("click", () => celShow("half", 150000, 11000));
-$("test300").addEventListener("click", () => celShow("goal", 300000, 13000));
-
-// Manually broadcast a milestone celebration to EVERY device (synced via
-// Firebase, exactly like an automatic milestone). Does NOT touch the count.
-function broadcastCelebration(level, value) {
-  if (!requireReady()) return;                 // needs admin + live connection
-  stateRef.child("celebrate").set({
-    level: level,
-    value: value,
-    at: firebase.database.ServerValue.TIMESTAMP
-  })
-    .then(() => flash("Celebration fired on all devices ✓", true))
-    .catch((e) => flash("Couldn't fire celebration: " + e.message));
-}
-// Fire buttons use the live (rescaled) thresholds so they match the total goal.
-$("fire150").addEventListener("click", () => broadcastCelebration("half", CELEBRATE.halfAt));
-$("fire200").addEventListener("click", () => broadcastCelebration("m2", CELEBRATE.m2At));
-$("fire250").addEventListener("click", () => broadcastCelebration("m3", CELEBRATE.m3At));
-$("fireGoal").addEventListener("click", () => broadcastCelebration("goal", CELEBRATE.goalAt));
-
 // ===== SHOW RECAP (on demand) =====
 $("showRecap").addEventListener("click", showWeekSummary);
 
 // ===== PROJECT SETTINGS =====
+const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Build the per-day working-hours editor (7 rows of start/end time inputs).
+(function buildHoursEditor() {
+  const el = $("hoursEditor");
+  el.innerHTML = DOW_NAMES.map((nm, dow) =>
+    `<div class="wh-row">
+       <span class="wh-day">${nm}</span>
+       <input type="time" id="wh-${dow}-start" aria-label="${nm} start" />
+       <span class="wh-dash">–</span>
+       <input type="time" id="wh-${dow}-end" aria-label="${nm} end" />
+     </div>`).join("");
+})();
+
 // Fill the inputs from the shared settings (skip a field while it's focused).
 function syncSettingsInputs() {
   const map = { setStart: "startDate", setEnd: "endDate", setTotal: "totalGoal", setDaily: "dailyGoal" };
   for (const id in map) {
     const el = $(id);
     if (el && document.activeElement !== el) el.value = settings[map[id]];
+  }
+  const wh = settings.workHours || {};
+  for (let dow = 0; dow < 7; dow++) {
+    const w = wh[String(dow)] || {};
+    const s = $(`wh-${dow}-start`), e = $(`wh-${dow}-end`);
+    if (s && document.activeElement !== s) s.value = w.start || "";
+    if (e && document.activeElement !== e) e.value = w.end || "";
   }
 }
 $("saveSettings").addEventListener("click", () => {
@@ -1332,7 +1352,19 @@ $("saveSettings").addEventListener("click", () => {
   if (end < start)    { flash("End date can't be before start date."); return; }
   if (isNaN(total) || total < 1) { flash("Total goal must be 1 or more."); return; }
   if (isNaN(daily) || daily < 1) { flash("Daily goal must be 1 or more."); return; }
-  stateRef.child("settings").set({ startDate: start, endDate: end, totalGoal: total, dailyGoal: daily })
+
+  // Collect per-day hours; a day with both start & end (end>start) is a work day.
+  const workHours = {};
+  for (let dow = 0; dow < 7; dow++) {
+    const s = $(`wh-${dow}-start`).value, e = $(`wh-${dow}-end`).value;
+    if (s && e) {
+      if (e <= s) { flash(`${DOW_NAMES[dow]} end time must be after its start.`); return; }
+      workHours[String(dow)] = { start: s, end: e };
+    }
+  }
+  if (!Object.keys(workHours).length) { flash("Set working hours for at least one day."); return; }
+
+  stateRef.child("settings").set({ startDate: start, endDate: end, totalGoal: total, dailyGoal: daily, workHours: workHours })
     .then(() => flash("Project settings saved ✓ — synced to all devices.", true))
     .catch((e) => flash("Save failed: " + e.message));
 });
