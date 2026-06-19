@@ -603,7 +603,7 @@ const ADMIN_PASSWORD = "5898";
 // ---- 3) DEFAULTS ---------------------------------------------
 const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
 const APP_TITLE = "Scriptures Completed";
-const APP_VERSION = "v14";        // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v15";        // shown in the footer so you can confirm a device is up to date
 
 // ---- 3b) PROJECT SETTINGS (editable live in the Admin panel) -
 //   These are just the DEFAULTS used before anything is saved. Admin
@@ -632,14 +632,18 @@ let settings = Object.assign({}, PROJECT_DEFAULTS);
 //   them automatically (½, ⅔, ⅚, full). Default 300k → 150k/200k/250k/300k.
 const CELEBRATE = {
   smallEvery: 10000,            // small popup each time this many is crossed
+  q1At: 50000, q2At: 100000,    // decent mid-tier milestones (⅙ and ⅓ of goal)
   halfAt: 150000, m2At: 200000, m3At: 250000, goalAt: 300000,
   smallMs: 8 * 1000,            // 8 seconds
+  midMs:   90 * 1000,           // 90 seconds (50k / 100k)
   halfMs:  5 * 60 * 1000,       // 5 minutes (half / 200k / 250k)
   goalMs:  10 * 60 * 1000       // 10 minutes (goal)
 };
 function applySettings() {
   const g = Number(settings.totalGoal) || PROJECT_DEFAULTS.totalGoal;
   CELEBRATE.goalAt = g;
+  CELEBRATE.q1At   = Math.round(g / 6);
+  CELEBRATE.q2At   = Math.round(g / 3);
   CELEBRATE.halfAt = Math.round(g * 0.5);
   CELEBRATE.m2At   = Math.round(g * 2 / 3);
   CELEBRATE.m3At   = Math.round(g * 5 / 6);
@@ -1200,6 +1204,8 @@ function celLoop() {
 
 const CEL_COPY = {
   small: { icon: "🎉", head: "Milestone!",   sub: "Scriptures completed — keep it going!" },
+  q1:    { icon: "⭐", head: "Great start!",   sub: "A sixth of the way — keep it going!" },
+  q2:    { icon: "🌟", head: "One-third there!", sub: "Momentum is building — press on!" },
   half:  { icon: "🚩", head: "Halfway there!", sub: "Half the goal reached — keep pressing on!" },
   m2:    { icon: "🚩", head: "Two-thirds there!", sub: "200,000 reached — keep pressing on!" },
   m3:    { icon: "🚩", head: "Almost there!", sub: "250,000 reached — so close now!" },
@@ -1223,7 +1229,7 @@ function celShow(level, value, remainingMs) {
   const cx = celCv.width / 2, cy = celCv.height / 2;
   // Confetti runs for the ENTIRE remaining duration (until the overlay closes).
   if (level === "goal") { celBurstSpread(70); celBurstAt(cx, cy, 160); celFireworksFor(remainingMs, 600); celReburstFor(remainingMs, 1400, 60); }
-  else if (level === "half" || level === "m2" || level === "m3") { celBurstSpread(55); celBurstAt(cx, cy, 110); celReburstFor(remainingMs, 1800, 70); }
+  else if (level === "half" || level === "m2" || level === "m3" || level === "q1" || level === "q2") { celBurstSpread(55); celBurstAt(cx, cy, 110); celReburstFor(remainingMs, 1800, 70); }
   else { celBurstAt(cx, cy, 90); celReburstFor(remainingMs, 2200, 55); }
 
   if (celHideT) clearTimeout(celHideT);
@@ -1394,6 +1400,7 @@ document.addEventListener("fullscreenchange", () => {
 
 function celDur(level) {
   return level === "goal" ? CELEBRATE.goalMs
+       : (level === "q1" || level === "q2") ? CELEBRATE.midMs
        : (level === "half" || level === "m2" || level === "m3") ? CELEBRATE.halfMs
        : CELEBRATE.smallMs;
 }
@@ -1525,6 +1532,8 @@ function detectMilestone(oldTotal, newTotal) {
   if (oldTotal < CELEBRATE.m3At && newTotal >= CELEBRATE.m3At) return { level: "m3", value: CELEBRATE.m3At };
   if (oldTotal < CELEBRATE.m2At && newTotal >= CELEBRATE.m2At) return { level: "m2", value: CELEBRATE.m2At };
   if (oldTotal < CELEBRATE.halfAt && newTotal >= CELEBRATE.halfAt) return { level: "half", value: CELEBRATE.halfAt };
+  if (oldTotal < CELEBRATE.q2At && newTotal >= CELEBRATE.q2At) return { level: "q2", value: CELEBRATE.q2At };
+  if (oldTotal < CELEBRATE.q1At && newTotal >= CELEBRATE.q1At) return { level: "q1", value: CELEBRATE.q1At };
   const oldM = Math.floor(oldTotal / CELEBRATE.smallEvery);
   const newM = Math.floor(newTotal / CELEBRATE.smallEvery);
   if (newM > oldM) return { level: "small", value: newM * CELEBRATE.smallEvery };
