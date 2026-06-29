@@ -157,6 +157,7 @@
   .daily-row .day .live{font-size:.62rem; color:var(--ok); letter-spacing:.08em; text-transform:uppercase;}
   .daily-row .day .met{font-size:.85rem; color:var(--ok); font-weight:800;}
   .daily-row .day .miss{font-size:.95rem; line-height:1;}
+  .daily-row .day .buffertag{font-size:.6rem; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; border:1px solid var(--border); border-radius:8px; padding:2px 6px;}
   .daily-row .val{font-weight:800; font-size:1.15rem; color:var(--accent); font-variant-numeric:tabular-nums;}
   .daily-row .val small{font-size:.68rem; color:var(--muted); font-weight:600; display:block; text-align:right;}
   .daily-foot{font-size:.72rem; color:var(--muted); text-align:center; margin-top:10px; line-height:1.5;}
@@ -403,6 +404,8 @@
   }
   .wh-row input:focus{outline:none; border-color:var(--accent);}
   .wh-row .wh-dash{color:var(--muted);}
+  .wh-row .wh-buf{flex:0 0 auto; display:flex; align-items:center; gap:3px; font-size:1rem; color:var(--muted); cursor:pointer;}
+  .wh-row .wh-buf input{width:18px; height:18px; flex:0 0 auto;}
   .wh-row .wh-off{
     flex:0 0 auto; background:transparent; color:var(--muted);
     border:1px solid var(--border); border-radius:10px; padding:9px 12px;
@@ -538,10 +541,9 @@
       <div class="settings-grid">
         <label class="set-lbl">Start date<input type="date" id="setStart" /></label>
         <label class="set-lbl">End date (deadline)<input type="date" id="setEnd" /></label>
-        <label class="set-lbl">Total goal<input type="number" id="setTotal" inputmode="numeric" /></label>
-        <label class="set-lbl">Daily goal<input type="number" id="setDaily" inputmode="numeric" /></label>
+        <label class="set-lbl" style="grid-column:1 / -1;">Total goal<input type="number" id="setTotal" inputmode="numeric" /></label>
       </div>
-      <div class="wh-label">Working hours per day (leave blank = day off)</div>
+      <div class="wh-label">Working hours per day (blank = off · ⏳ = buffer day, no goal)</div>
       <div id="hoursEditor" class="hours-editor"></div>
       <button class="btn-sm go" id="saveSettings" style="width:100%; margin-top:12px; padding:13px;">Save project settings</button>
     </div>
@@ -641,7 +643,7 @@ const ADMIN_PASSWORD = "5898";
 // ---- 3) DEFAULTS ---------------------------------------------
 const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
 const APP_TITLE = "Scriptures Completed";
-const APP_VERSION = "v22";        // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v23";        // shown in the footer so you can confirm a device is up to date
 
 // ---- 3b) PROJECT SETTINGS (editable live in the Admin panel) -
 //   These are just the DEFAULTS used before anything is saved. Admin
@@ -651,8 +653,9 @@ const PROJECT_DEFAULTS = {
   startDate: "2026-06-15",   // first work day
   endDate:   "2026-06-19",   // last day shown + pace/projection deadline
   totalGoal: 300000,         // grand total Scriptures goal
-  dailyGoal: 75000,          // per-work-day goal
+  // Per-day goals are DERIVED from each day's working hours and the total goal.
   // Working hours per day-of-week (0=Sun … 6=Sat). A day not listed is OFF.
+  // Add buffer:true to make a day a work day that carries NO goal (overflow).
   // Times are "HH:MM" Eastern. Default: Mon–Fri 9:00 AM–8:00 PM.
   workHours: {
     "1": { start: "09:00", end: "20:00" },
@@ -872,6 +875,13 @@ function dayWindowHours(d) {
   return w ? (w.end - w.start) / 3600000 : 0;
 }
 
+// A buffer day has working hours but carries NO goal (excluded from the split).
+function isBufferDay(d) {
+  const wh = settings.workHours || PROJECT_DEFAULTS.workHours;
+  const w = wh[String(d.getDay())];
+  return !!(w && w.buffer);
+}
+
 // Sum the WORKING hours between two ET datetimes, per each day's window.
 function workingHoursBetween(start, end) {
   if (end <= start) return 0;
@@ -1002,9 +1012,14 @@ function missionWeekDates() {
       key,
       label: `${names[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`,
       isWorkDay: !!dayWindowFor(d),
-      isGoal: d.getTime() === end.getTime()   // last day = deadline
+      isBuffer: isBufferDay(d),
+      isGoal: false
     });
     d.setDate(d.getDate() + 1);
+  }
+  // The goal deadline is the LAST non-buffer work day (buffer days come after).
+  for (let i = out.length - 1; i >= 0; i--) {
+    if (out[i].isWorkDay && !out[i].isBuffer) { out[i].isGoal = true; break; }
   }
   return out;
 }
@@ -1014,7 +1029,12 @@ function computeDailyRows() {
   const dates = missionWeekDates();
   const days = state.days || {};
   const todayKey = todayKeyET();
-  const perDayGoal = Number(settings.dailyGoal) || PROJECT_DEFAULTS.dailyGoal;
+  const goal = Number(settings.totalGoal) || PROJECT_DEFAULTS.totalGoal;
+
+  // Total working hours across NON-buffer work days — the goal is split by these.
+  const dateObj = (key) => { const p = key.split("-").map(Number); return new Date(p[0], p[1] - 1, p[2]); };
+  let goalHours = 0;
+  dates.forEach((d) => { if (d.isWorkDay && !d.isBuffer) goalHours += dayWindowHours(dateObj(d.key)); });
 
   let prevCum = 0; // cumulative boxes at the start of each day
   const rows = dates.map((d) => {
@@ -1032,7 +1052,11 @@ function computeDailyRows() {
     prevCum = cum;
 
     const scriptures = boxesToday * state.bookletsPerBox;
-    const dayGoal = d.isWorkDay ? perDayGoal : 0;   // weekends/non-work days: no goal
+    // Per-day goal = this day's share of the total, weighted by its work hours.
+    let dayGoal = 0;
+    if (d.isWorkDay && !d.isBuffer && goalHours > 0) {
+      dayGoal = Math.round(goal * dayWindowHours(dateObj(d.key)) / goalHours);
+    }
     const isPast = d.key < todayKey;   // a fully-finished day
     const met = dayGoal > 0 && scriptures >= dayGoal;
     const missed = dayGoal > 0 && isPast && scriptures < dayGoal;
@@ -1040,7 +1064,7 @@ function computeDailyRows() {
     return Object.assign({}, d, { scriptures, boxes: boxesToday, dayGoal, isToday, isPast, met, missed });
   });
 
-  return { rows, perDayGoal };
+  return { rows, goalHours };
 }
 
 // ----- Per-hour data -----
@@ -1106,13 +1130,14 @@ function computeHourStats() {
 }
 
 function renderDaily() {
-  const { rows, perDayGoal } = computeDailyRows();
+  const { rows } = computeDailyRows();
   const html = rows.map((d) => {
     const sub = d.dayGoal > 0
       ? `goal ${fmt(d.dayGoal)} · ${fmt(d.boxes)} boxes`
-      : `off · ${fmt(d.boxes)} boxes`;
+      : (d.isBuffer ? `buffer · ${fmt(d.boxes)} boxes` : `off · ${fmt(d.boxes)} boxes`);
     const tags =
       (d.isGoal ? `<span class="goal">🎯 GOAL</span>` : "") +
+      (d.isBuffer ? `<span class="buffertag">⏳ buffer</span>` : "") +
       (d.isToday ? `<span class="live">● today</span>` : "") +
       (d.met ? `<span class="met">✓</span>` : "") +
       (d.missed ? `<span class="miss">😞</span>` : "");
@@ -1136,7 +1161,7 @@ function renderDaily() {
 
   $("dailyList").innerHTML = html;
   $("dailyFoot").textContent =
-    `Daily goal ${fmt(perDayGoal)} Scriptures · ${fmt(settings.totalGoal)} total goal`;
+    `Daily goals scale with each day's hours · ${fmt(settings.totalGoal)} total goal`;
 }
 
 // Recompute the average once a minute so it keeps moving even when
@@ -1373,28 +1398,31 @@ function markSettingsDirty() { settingsDirty = true; }
        <input type="time" id="wh-${dow}-start" aria-label="${nm} start" />
        <span class="wh-dash">–</span>
        <input type="time" id="wh-${dow}-end" aria-label="${nm} end" />
+       <label class="wh-buf" title="Buffer day (no goal)"><input type="checkbox" id="wh-${dow}-buf" />⏳</label>
        <button type="button" class="wh-off" data-dow="${dow}" title="Mark ${nm} off" aria-label="Mark ${nm} off">Off</button>
      </div>`).join("");
-  // "Off" clears both times → the day is treated as a non-work day on save.
+  // "Off" clears both times + buffer → the day becomes a non-work day on save.
   el.querySelectorAll(".wh-off").forEach((b) => {
     b.addEventListener("click", () => {
       const dow = b.getAttribute("data-dow");
       $(`wh-${dow}-start`).value = "";
       $(`wh-${dow}-end`).value = "";
+      $(`wh-${dow}-buf`).checked = false;
       markSettingsDirty();
     });
   });
   el.querySelectorAll("input").forEach((inp) => inp.addEventListener("input", markSettingsDirty));
+  el.querySelectorAll('input[type="checkbox"]').forEach((c) => c.addEventListener("change", markSettingsDirty));
 })();
 
 // Any edit to a settings field marks the form dirty.
-["setStart", "setEnd", "setTotal", "setDaily"].forEach((id) => $(id).addEventListener("input", markSettingsDirty));
+["setStart", "setEnd", "setTotal"].forEach((id) => $(id).addEventListener("input", markSettingsDirty));
 
 // Fill the inputs from the shared settings — but never while the admin is
 // mid-edit (dirty) or focused on a field.
 function syncSettingsInputs() {
   if (settingsDirty) return;
-  const map = { setStart: "startDate", setEnd: "endDate", setTotal: "totalGoal", setDaily: "dailyGoal" };
+  const map = { setStart: "startDate", setEnd: "endDate", setTotal: "totalGoal" };
   for (const id in map) {
     const el = $(id);
     if (el && document.activeElement !== el) el.value = settings[map[id]];
@@ -1402,9 +1430,10 @@ function syncSettingsInputs() {
   const wh = settings.workHours || {};
   for (let dow = 0; dow < 7; dow++) {
     const w = wh[String(dow)] || {};
-    const s = $(`wh-${dow}-start`), e = $(`wh-${dow}-end`);
+    const s = $(`wh-${dow}-start`), e = $(`wh-${dow}-end`), b = $(`wh-${dow}-buf`);
     if (s && document.activeElement !== s) s.value = w.start || "";
     if (e && document.activeElement !== e) e.value = w.end || "";
+    if (b) b.checked = !!w.buffer;
   }
 }
 $("saveSettings").addEventListener("click", () => {
@@ -1412,24 +1441,27 @@ $("saveSettings").addEventListener("click", () => {
   const start = $("setStart").value;
   const end   = $("setEnd").value;
   const total = parseInt($("setTotal").value, 10);
-  const daily = parseInt($("setDaily").value, 10);
   if (!start || !end) { flash("Pick a start and end date."); return; }
   if (end < start)    { flash("End date can't be before start date."); return; }
   if (isNaN(total) || total < 1) { flash("Total goal must be 1 or more."); return; }
-  if (isNaN(daily) || daily < 1) { flash("Daily goal must be 1 or more."); return; }
 
   // Collect per-day hours; a day with both start & end (end>start) is a work day.
+  // A checked ⏳ box marks it a buffer day (work day, but no goal).
   const workHours = {};
+  let hasGoalDay = false;
   for (let dow = 0; dow < 7; dow++) {
     const s = $(`wh-${dow}-start`).value, e = $(`wh-${dow}-end`).value;
     if (s && e) {
       if (e <= s) { flash(`${DOW_NAMES[dow]} end time must be after its start.`); return; }
-      workHours[String(dow)] = { start: s, end: e };
+      const buffer = $(`wh-${dow}-buf`).checked;
+      workHours[String(dow)] = buffer ? { start: s, end: e, buffer: true } : { start: s, end: e };
+      if (!buffer) hasGoalDay = true;
     }
   }
   if (!Object.keys(workHours).length) { flash("Set working hours for at least one day."); return; }
+  if (!hasGoalDay) { flash("At least one day must be a non-buffer work day (it carries the goal)."); return; }
 
-  stateRef.child("settings").set({ startDate: start, endDate: end, totalGoal: total, dailyGoal: daily, workHours: workHours })
+  stateRef.child("settings").set({ startDate: start, endDate: end, totalGoal: total, workHours: workHours })
     .then(() => { settingsDirty = false; flash("Project settings saved ✓ — synced to all devices.", true); })
     .catch((e) => flash("Save failed: " + e.message));
 });
