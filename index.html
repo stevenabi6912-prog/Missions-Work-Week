@@ -409,6 +409,11 @@
     font-size:.82rem; font-weight:700;
   }
   .wh-row .wh-off:active{transform:scale(.95);}
+  .btn-danger{
+    width:100%; background:transparent; color:var(--danger);
+    border:1px solid rgba(224,121,107,.5); padding:15px; font-size:.95rem; border-radius:12px; letter-spacing:.02em;
+  }
+  .btn-danger.armed{ background:var(--danger); color:#3a0d08; border-color:var(--danger); }
 
   .hidden{display:none !important;}
 
@@ -547,6 +552,15 @@
     </div>
 
 
+    <div class="field" style="border-top:1px solid var(--border); margin-top:20px; padding-top:18px;">
+      <label style="color:var(--danger);">Danger zone</label>
+      <button class="btn-danger" id="resetBtn">Reset all data…</button>
+      <div class="note" style="margin-top:6px; text-align:left;">
+        Erases the count, all daily totals, and hourly history — for <b>every device</b>. Cannot be undone.
+        Your project settings (dates, goals, hours) are kept.
+      </div>
+    </div>
+
     <div class="note" id="adminNote"></div>
     <div class="adminbar" style="margin-top:6px;">
       <button class="btn-ghost" id="logoutBtn">Lock & Sign Out</button>
@@ -626,7 +640,7 @@ const ADMIN_PASSWORD = "5898";
 // ---- 3) DEFAULTS ---------------------------------------------
 const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
 const APP_TITLE = "Scriptures Completed";
-const APP_VERSION = "v20";        // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v21";        // shown in the footer so you can confirm a device is up to date
 
 // ---- 3b) PROJECT SETTINGS (editable live in the Admin panel) -
 //   These are just the DEFAULTS used before anything is saved. Admin
@@ -1525,6 +1539,35 @@ $("logoutBtn").addEventListener("click", () => {
   isAdmin = false;
   adminPanel.classList.add("hidden");
   adminToggle.textContent = "🔒 Admin";
+  disarmReset();
+});
+
+// ---- Complete project reset (two-step confirm) ----
+let resetArmed = false, resetTimer = null;
+function disarmReset() {
+  resetArmed = false;
+  if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
+  const b = $("resetBtn");
+  if (b) { b.textContent = "Reset all data…"; b.classList.remove("armed"); }
+}
+$("resetBtn").addEventListener("click", () => {
+  if (!requireReady()) return;
+  if (!resetArmed) {
+    // First tap: arm with a clear warning; auto-disarm after 5s.
+    resetArmed = true;
+    $("resetBtn").textContent = "⚠ Tap again to ERASE all data";
+    $("resetBtn").classList.add("armed");
+    resetTimer = setTimeout(disarmReset, 5000);
+    return;
+  }
+  // Second tap: do it. Clears count + daily + hourly + any pending celebration.
+  disarmReset();
+  stateRef.update({ completedBoxes: 0, days: null, hours: null, celebrate: null })
+    .then(() => {
+      Object.keys(shownKeys).forEach((k) => delete shownKeys[k]);  // allow milestones to fire again
+      flash("Project reset — all counts cleared ✓", true);
+    })
+    .catch((e) => flash("Reset failed: " + e.message));
 });
 
 // ---- Write helpers (guarded) ----
