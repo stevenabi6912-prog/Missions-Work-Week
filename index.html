@@ -609,7 +609,7 @@ const ADMIN_PASSWORD = "5898";
 // ---- 3) DEFAULTS ---------------------------------------------
 const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
 const APP_TITLE = "Scriptures Completed";
-const APP_VERSION = "v16";        // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v17";        // shown in the footer so you can confirm a device is up to date
 
 // ---- 3b) PROJECT SETTINGS (editable live in the Admin panel) -
 //   These are just the DEFAULTS used before anything is saved. Admin
@@ -1078,7 +1078,7 @@ function renderDaily() {
   const html = rows.map((d) => {
     const sub = d.dayGoal > 0
       ? `goal ${fmt(d.dayGoal)} · ${fmt(d.boxes)} boxes`
-      : `buffer · ${fmt(d.boxes)} boxes`;
+      : `off · ${fmt(d.boxes)} boxes`;
     const tags =
       (d.isGoal ? `<span class="goal">🎯 GOAL</span>` : "") +
       (d.isToday ? `<span class="live">● today</span>` : "") +
