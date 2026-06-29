@@ -609,7 +609,7 @@ const ADMIN_PASSWORD = "5898";
 // ---- 3) DEFAULTS ---------------------------------------------
 const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
 const APP_TITLE = "Scriptures Completed";
-const APP_VERSION = "v17";        // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v18";        // shown in the footer so you can confirm a device is up to date
 
 // ---- 3b) PROJECT SETTINGS (editable live in the Admin panel) -
 //   These are just the DEFAULTS used before anything is saved. Admin
@@ -1328,6 +1328,11 @@ $("showRecap").addEventListener("click", showWeekSummary);
 const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // Build the per-day working-hours editor (7 rows of start/end time inputs).
+// While the admin is editing the settings form, live updates must NOT overwrite
+// the fields. settingsDirty stays true from the first edit until Save (or unlock).
+let settingsDirty = false;
+function markSettingsDirty() { settingsDirty = true; }
+
 (function buildHoursEditor() {
   const el = $("hoursEditor");
   el.innerHTML = DOW_NAMES.map((nm, dow) =>
@@ -1344,12 +1349,19 @@ const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       const dow = b.getAttribute("data-dow");
       $(`wh-${dow}-start`).value = "";
       $(`wh-${dow}-end`).value = "";
+      markSettingsDirty();
     });
   });
+  el.querySelectorAll("input").forEach((inp) => inp.addEventListener("input", markSettingsDirty));
 })();
 
-// Fill the inputs from the shared settings (skip a field while it's focused).
+// Any edit to a settings field marks the form dirty.
+["setStart", "setEnd", "setTotal", "setDaily"].forEach((id) => $(id).addEventListener("input", markSettingsDirty));
+
+// Fill the inputs from the shared settings — but never while the admin is
+// mid-edit (dirty) or focused on a field.
 function syncSettingsInputs() {
+  if (settingsDirty) return;
   const map = { setStart: "startDate", setEnd: "endDate", setTotal: "totalGoal", setDaily: "dailyGoal" };
   for (const id in map) {
     const el = $(id);
@@ -1386,7 +1398,7 @@ $("saveSettings").addEventListener("click", () => {
   if (!Object.keys(workHours).length) { flash("Set working hours for at least one day."); return; }
 
   stateRef.child("settings").set({ startDate: start, endDate: end, totalGoal: total, dailyGoal: daily, workHours: workHours })
-    .then(() => flash("Project settings saved ✓ — synced to all devices.", true))
+    .then(() => { settingsDirty = false; flash("Project settings saved ✓ — synced to all devices.", true); })
     .catch((e) => flash("Save failed: " + e.message));
 });
 
@@ -1483,6 +1495,8 @@ function tryUnlock() {
     $("pwErr").textContent = "";
     $("pwInput").value = "";
     $("perBoxInput").value = state.bookletsPerBox;
+    settingsDirty = false;   // start fresh; show current saved values
+    syncSettingsInputs();
   } else {
     $("pwErr").textContent = "Wrong password.";
   }
