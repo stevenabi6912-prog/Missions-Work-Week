@@ -403,6 +403,12 @@
   }
   .wh-row input:focus{outline:none; border-color:var(--accent);}
   .wh-row .wh-dash{color:var(--muted);}
+  .wh-row .wh-off{
+    flex:0 0 auto; background:transparent; color:var(--muted);
+    border:1px solid var(--border); border-radius:10px; padding:9px 12px;
+    font-size:.82rem; font-weight:700;
+  }
+  .wh-row .wh-off:active{transform:scale(.95);}
 
   .hidden{display:none !important;}
 
@@ -603,7 +609,7 @@ const ADMIN_PASSWORD = "5898";
 // ---- 3) DEFAULTS ---------------------------------------------
 const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
 const APP_TITLE = "Scriptures Completed";
-const APP_VERSION = "v15";        // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v16";        // shown in the footer so you can confirm a device is up to date
 
 // ---- 3b) PROJECT SETTINGS (editable live in the Admin panel) -
 //   These are just the DEFAULTS used before anything is saved. Admin
@@ -1330,7 +1336,16 @@ const DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
        <input type="time" id="wh-${dow}-start" aria-label="${nm} start" />
        <span class="wh-dash">–</span>
        <input type="time" id="wh-${dow}-end" aria-label="${nm} end" />
+       <button type="button" class="wh-off" data-dow="${dow}" title="Mark ${nm} off" aria-label="Mark ${nm} off">Off</button>
      </div>`).join("");
+  // "Off" clears both times → the day is treated as a non-work day on save.
+  el.querySelectorAll(".wh-off").forEach((b) => {
+    b.addEventListener("click", () => {
+      const dow = b.getAttribute("data-dow");
+      $(`wh-${dow}-start`).value = "";
+      $(`wh-${dow}-end`).value = "";
+    });
+  });
 })();
 
 // Fill the inputs from the shared settings (skip a field while it's focused).
