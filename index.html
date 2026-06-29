@@ -512,15 +512,20 @@
     </div>
 
     <div class="field">
-      <label>Manual day fix — credit boxes to a specific day</label>
+      <label>Manual day fix — correct a specific day's boxes</label>
       <div class="row">
         <input type="date" id="fixDate" />
       </div>
       <div class="row" style="margin-top:8px;">
-        <input type="number" id="fixBoxes" inputmode="numeric" placeholder="± boxes (e.g. 30, or -10)" />
-        <button class="btn-sm go" id="fixApply">Apply</button>
+        <input type="number" id="fixBoxes" inputmode="numeric" placeholder="boxes" />
+        <button class="btn-sm" id="fixAdd">Add / Remove</button>
+        <button class="btn-sm go" id="fixSet">Set day</button>
       </div>
-      <div class="note" style="margin-top:6px; text-align:left;">Adds (or removes with a minus) boxes to that day and the grand total.</div>
+      <div class="note" style="margin-top:6px; text-align:left;">
+        <b>Add / Remove:</b> +N adds, −N removes from that day.<br>
+        <b>Set day:</b> makes that day exactly N boxes (use 0 to clear a mistake).<br>
+        Both adjust the grand total to match.
+      </div>
     </div>
 
     <div class="field">
@@ -621,7 +626,7 @@ const ADMIN_PASSWORD = "5898";
 // ---- 3) DEFAULTS ---------------------------------------------
 const DEFAULT_BOOKLETS_PER_BOX = 300;   // admin can change this live
 const APP_TITLE = "Scriptures Completed";
-const APP_VERSION = "v19";        // shown in the footer so you can confirm a device is up to date
+const APP_VERSION = "v20";        // shown in the footer so you can confirm a device is up to date
 
 // ---- 3b) PROJECT SETTINGS (editable live in the Admin panel) -
 //   These are just the DEFAULTS used before anything is saved. Admin
@@ -1621,31 +1626,57 @@ $("perBoxBtn").addEventListener("click", () => {
     .catch((e) => flash("Save failed: " + e.message));
 });
 
-// Manual day fix: credit (or remove) boxes on a specific day. Because the
-// daily totals come from CUMULATIVE end-of-day stamps, we add the delta to the
-// chosen day AND every stamped day after it, and to the grand total — so that
-// day's number changes while later days keep their own totals.
-$("fixApply").addEventListener("click", () => {
+// Boxes currently credited to a given day (today uses the live count).
+function dayProduction(dateKey) {
+  const days = state.days || {};
+  let prevBefore = 0;
+  Object.keys(days).sort().forEach((k) => { if (k < dateKey) prevBefore = Math.max(prevBefore, Number(days[k]) || 0); });
+  let curD;
+  if (dateKey === todayKeyET()) curD = state.completedBoxes;
+  else if (days[dateKey] != null) curD = Number(days[dateKey]);
+  else curD = prevBefore;
+  return Math.max(0, curD - prevBefore);
+}
+
+// Apply a change of `delta` boxes to a specific day. Daily totals come from
+// CUMULATIVE end-of-day stamps, so we shift the chosen day AND every stamped day
+// after it, plus the grand total — so that day changes while later days keep
+// their own numbers.
+function applyDayDelta(dateKey, delta) {
+  const days = state.days || {};
+  const newTotal = Math.max(0, state.completedBoxes + delta);
+  const realDelta = newTotal - state.completedBoxes;   // after clamping at 0
+  const updates = { completedBoxes: newTotal, bookletsPerBox: state.bookletsPerBox };
+  let prevBefore = 0;
+  Object.keys(days).sort().forEach((k) => {
+    if (k < dateKey) prevBefore = Math.max(prevBefore, Number(days[k]) || 0);
+    else updates["days/" + k] = Math.max(0, (Number(days[k]) || 0) + realDelta);
+  });
+  if (days[dateKey] == null) updates["days/" + dateKey] = Math.max(0, prevBefore + realDelta);
+  return stateRef.update(updates).then(() => realDelta);
+}
+
+$("fixAdd").addEventListener("click", () => {
   if (!requireReady()) return;
-  const dateKey = $("fixDate").value;            // YYYY-MM-DD
+  const dateKey = $("fixDate").value;
   const n = parseInt($("fixBoxes").value, 10);
   if (!dateKey) { flash("Pick the day to fix."); return; }
   if (isNaN(n) || n === 0) { flash("Enter boxes to add (or a minus number to remove)."); return; }
+  applyDayDelta(dateKey, n)
+    .then((d) => { flash(`${dateKey}: ${d >= 0 ? "+" : ""}${d} boxes ✓`, true); $("fixBoxes").value = ""; })
+    .catch((e) => flash("Fix failed: " + e.message));
+});
 
-  const days = state.days || {};
-  const newTotal = Math.max(0, state.completedBoxes + n);
-  const delta = newTotal - state.completedBoxes;  // actual change after clamping
-  const updates = { completedBoxes: newTotal, bookletsPerBox: state.bookletsPerBox };
-
-  let prevBefore = 0; // cumulative carried into the chosen day
-  Object.keys(days).sort().forEach((k) => {
-    if (k < dateKey) prevBefore = Math.max(prevBefore, Number(days[k]) || 0);
-    else updates["days/" + k] = Math.max(0, (Number(days[k]) || 0) + delta);
-  });
-  if (days[dateKey] == null) updates["days/" + dateKey] = Math.max(0, prevBefore + delta);
-
-  stateRef.update(updates)
-    .then(() => { flash(`${dateKey}: ${delta >= 0 ? "+" : ""}${delta} boxes applied ✓`, true); $("fixBoxes").value = ""; })
+$("fixSet").addEventListener("click", () => {
+  if (!requireReady()) return;
+  const dateKey = $("fixDate").value;
+  const n = parseInt($("fixBoxes").value, 10);
+  if (!dateKey) { flash("Pick the day to fix."); return; }
+  if (isNaN(n) || n < 0) { flash("Enter the exact box count for that day (0 to clear)."); return; }
+  const delta = n - dayProduction(dateKey);
+  if (delta === 0) { flash("That day is already at " + fmt(n) + " boxes.", true); return; }
+  applyDayDelta(dateKey, delta)
+    .then(() => { flash(`${dateKey} set to ${fmt(n)} boxes ✓`, true); $("fixBoxes").value = ""; })
     .catch((e) => flash("Fix failed: " + e.message));
 });
 </script>
